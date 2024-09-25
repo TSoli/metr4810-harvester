@@ -2,7 +2,6 @@
 
 import argparse
 import sys
-from collections import OrderedDict
 
 import cv2
 import numpy as np
@@ -184,9 +183,9 @@ def get_robot_pos(
     marker_size: float,
     mtx: np.ndarray,
     dist: np.ndarray,
-) -> tuple[float, float] | None:
+) -> np.ndarray | None:
     """
-    Get the robot's x-y position
+    Get the robot's pose.
 
     Params:
         tf_wc: Transformation matrix from world to camera frame.
@@ -197,7 +196,7 @@ def get_robot_pos(
         dist: The distortion coefficients for the camera.
 
     Returns:
-        The robot's position in the world frame.
+        The robot's pose in the world frame.
     """
     # TODO: will use multiple tags... This can be slightly easier with ROS2 if we use it
     if ROBOT_ID not in ids:
@@ -220,7 +219,12 @@ def get_robot_pos(
     if not success:
         return None
 
-    return tf_wc @ t_vec
+    tf_cr = np.eye(4)
+    R = cv2.Rodrigues(r_vec)
+    tf_cr[:3, :3] = R
+    tf_cr[:3, 3] = t_vec
+
+    return tf_wc @ tf_cr
 
 
 if __name__ == "__main__":
