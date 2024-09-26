@@ -7,6 +7,7 @@ LEFT_MOTOR_PWM_PIN = 14
 LEFT_MOTOR_DIR_PIN = 15
 RIGHT_MOTOR_PWM_PIN = 12
 RIGHT_MOTOR_DIR_PIN = 13
+ARM_MOTOR_PWM_PIN = 2  # Use MISC servo pin due to clearance on PCB
 
 
 class DCMotor:
