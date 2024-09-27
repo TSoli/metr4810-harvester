@@ -64,12 +64,46 @@ def main(args=None):
             break
 
         corners, ids, rejected = detector.detectMarkers(frame)
+        draw_axes(frame.copy(), marker_size, corners, mtx, dist)
+
+        if corners is None or ids is None:
+            continue
+
         tf_cw = get_tf_cw(ids, corners, POINTS_IDS, marker_size, mtx, dist)
         if tf_cw is not None:
             tf_wc = np.linalg.inv(tf_cw)
 
         if tf_wc is None:
             continue
+
+        print(get_robot_pos(tf_wc, ids, corners, marker_size, mtx, dist))
+
+
+def draw_axes(frame, marker_size, corners, mtx, dist) -> None:
+    marker_points = np.array(
+        [
+            [-marker_size / 2, marker_size / 2, 0],
+            [marker_size / 2, marker_size / 2, 0],
+            [marker_size / 2, -marker_size / 2, 0],
+            [-marker_size / 2, -marker_size / 2, 0],
+        ],
+        dtype=np.float32,
+    )
+    if corners is not None:
+        for corner in corners:
+            success, r_vec, t_vec = cv2.solvePnP(
+                marker_points, corner, mtx, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
+            )
+
+            if not success:
+                continue
+
+            cv2.drawFrameAxes(frame, mtx, dist, r_vec, t_vec, marker_size)
+
+    cv2.imshow("frame", frame)
+    key = cv2.waitKey(1)
+    if key == ord("q"):
+        exit(0)
 
 
 def get_cam_params(file: str) -> tuple[np.ndarray, np.ndarray]:
@@ -78,7 +112,7 @@ def get_cam_params(file: str) -> tuple[np.ndarray, np.ndarray]:
         params = yaml.safe_load(f)
 
     mtx_shape = (
-        params["camera_matrix"]["rorobotics name for central controller serverws"],
+        params["camera_matrix"]["rows"],
         params["camera_matrix"]["cols"],
     )
     mtx = np.array(params["camera_matrix"]["data"])
@@ -127,7 +161,7 @@ def get_tf_cw(
         dtype=np.float32,
     )
 
-    t_vecs = []
+    res_t_vecs = []
     res_ids = []
 
     for id, corner in zip(ids, corners):
@@ -141,38 +175,45 @@ def get_tf_cw(
         if not success:
             continue
 
-        t_vecs.append(t_vec)
+        res_t_vecs.append(t_vec)
+
         res_ids.append(id)
 
-    t_vecs = np.array(t_vecs)
-    if len(t_vecs) < 3 or point_ids[2] not in res_ids:
+    if len(res_t_vecs) < 1:
+        return None
+
+    t_vecs = np.column_stack(res_t_vecs)
+    if t_vecs.shape[1] < 3 or point_ids[2] not in res_ids:
         # TODO: ways that do not require the origin
         # insufficient points to get the plane or origin not in points
         return None
 
-    centroid = np.mean(t_vecs, axis=1)
-    svd = np.linalg.svd(t_vecs - centroid)
-    new_z = svd[0, :, -1]
+    centroid = np.mean(t_vecs, axis=1, keepdims=True)
+    left, _, _ = np.linalg.svd(t_vecs - centroid)
+    new_z = left[:, -1]
+    # The normal vector should point towards the camera
+    if new_z[-1] > 0:
+        new_z *= -1
 
     idx = res_ids.index(point_ids[2])
     # translation to world origin
-    t = t_vecs[idx]
+    t = t_vecs[:, idx]
 
     if point_ids[3] in res_ids:
         idx = res_ids.index(point_ids[3])
-        new_x = t_vecs[idx] - t
+        new_x = (t_vecs[:, idx] - t).T
         new_x /= np.linalg.norm(new_x)
         new_y = np.cross(new_z, new_x)
     else:
         idx = res_ids.index(point_ids[0])
-        new_y = t_vecs[idx] - t
+        new_y = (t_vecs[:, idx] - t).T
         new_y /= np.linalg.norm(new_y)
         new_x = np.cross(new_y, new_z)
 
-    R = np.column_stack((new_x, new_y, new_z))
+    R = np.column_stack((new_x.T, new_y.T, new_z.T))
     tf = np.eye(4)
     tf[:3, :3] = R
-    tf[:3, 3] = t
+    tf[:3, 3] = t.T
     return tf
 
 
@@ -220,9 +261,9 @@ def get_robot_pos(
         return None
 
     tf_cr = np.eye(4)
-    R = cv2.Rodrigues(r_vec)
+    R, _ = cv2.Rodrigues(r_vec)
     tf_cr[:3, :3] = R
-    tf_cr[:3, 3] = t_vec
+    tf_cr[:3, 3] = t_vec.T
 
     return tf_wc @ tf_cr
 
