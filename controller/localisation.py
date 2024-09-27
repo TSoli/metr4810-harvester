@@ -1,109 +1,260 @@
-#!/usr/bin/env python
-
 import argparse
 import sys
+from collections.abc import Sequence
 
 import cv2
 import numpy as np
 import yaml
 
-ARUCO_DICT = {
-    "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
-    "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
-    "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
-    "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
-    "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
-    "DICT_5X5_100": cv2.aruco.DICT_5X5_100,
-    "DICT_5X5_250": cv2.aruco.DICT_5X5_250,
-    "DICT_5X5_1000": cv2.aruco.DICT_5X5_1000,
-    "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
-    "DICT_6X6_100": cv2.aruco.DICT_6X6_100,
-    "DICT_6X6_250": cv2.aruco.DICT_6X6_250,
-    "DICT_6X6_1000": cv2.aruco.DICT_6X6_1000,
-    "DICT_7X7_50": cv2.aruco.DICT_7X7_50,
-    "DICT_7X7_100": cv2.aruco.DICT_7X7_100,
-    "DICT_7X7_250": cv2.aruco.DICT_7X7_250,
-    "DICT_7X7_1000": cv2.aruco.DICT_7X7_1000,
-    "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
-}
-
 DEFAULT_SIZE = "DICT_4X4_50"
-DEFAULT_SQUARE = 0.12  # metres
 POINTS_IDS = [0, 1, 2, 3]  # IDs of the aruco markers at the corners of the pit
 ROBOT_ID = 4  # ID for aruco marker on the robot
 
 
-def main(args=None):
-    dev = args.device
+class Localisation:
+    """Localises the Robot given camera frames"""
 
-    cap = cv2.VideoCapture(dev)
-    if not cap.isOpened():
-        print("Could not open camera", file=sys.stderr)
-        exit(1)
+    ARUCO_DICT = {
+        "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
+        "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
+        "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
+        "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
+        "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
+        "DICT_5X5_100": cv2.aruco.DICT_5X5_100,
+        "DICT_5X5_250": cv2.aruco.DICT_5X5_250,
+        "DICT_5X5_1000": cv2.aruco.DICT_5X5_1000,
+        "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
+        "DICT_6X6_100": cv2.aruco.DICT_6X6_100,
+        "DICT_6X6_250": cv2.aruco.DICT_6X6_250,
+        "DICT_6X6_1000": cv2.aruco.DICT_6X6_1000,
+        "DICT_7X7_50": cv2.aruco.DICT_7X7_50,
+        "DICT_7X7_100": cv2.aruco.DICT_7X7_100,
+        "DICT_7X7_250": cv2.aruco.DICT_7X7_250,
+        "DICT_7X7_1000": cv2.aruco.DICT_7X7_1000,
+        "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
+    }
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-    cap.set(cv2.CAP_PROP_FPS, 60)
-    print(f"fps: {cap.get(cv2.CAP_PROP_FPS)}")
+    def __init__(
+        self,
+        mtx: np.ndarray,
+        dist: np.ndarray,
+        robot_markers: dict[int, np.ndarray],
+        marker_size: float = 0.12,
+        dict_type: str = "DICT_4X4_50",
+        corner_ids: list[int] = [0, 1, 2, 3],
+    ) -> None:
+        """
+        Params:
+            mtx, dist: Camera calibration parameters (see https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html)
+            robot_markers: Map from aruco marker id to transformation matrix of
+                robot frame to marker frame.
+            marker_size: Side length of aruco markers in metres.
+            dict_type: The aruco dictionary to use.
+            corner_ids: The ids for the corners of the pit in order top left, top right,
+                bottom left, bottom right as looking from above.
+        """
+        self._mtx = mtx
+        self._dist = dist
+        self._robot_markers = robot_markers
+        self._marker_size = marker_size
+        self._marker_points = np.array(
+            [
+                [-marker_size / 2, marker_size / 2, 0],
+                [marker_size / 2, marker_size / 2, 0],
+                [marker_size / 2, -marker_size / 2, 0],
+                [-marker_size / 2, -marker_size / 2, 0],
+            ],
+            dtype=np.float32,
+        )
+        self._corner_ids = corner_ids
+        self._tf_wr = None
+        self._tf_cw = None
 
-    mtx, dist = get_cam_params(args.cam_params)
+        aruco_dict = cv2.aruco.getPredefinedDictionary(
+            Localisation.ARUCO_DICT[dict_type]
+        )
+        aruco_params = cv2.aruco.DetectorParameters()
+        self._aruco_detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
 
-    aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT[args.size])
-    aruco_params = cv2.aruco.DetectorParameters()
-    detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
+    @property
+    def tf_cw(self) -> np.ndarray | None:
+        """Get the transform from the camera to the world frame"""
+        return self._tf_cw
 
-    tf_wc = None
-    marker_size = args.square
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            continue
+    @property
+    def tf_wr(self) -> np.ndarray | None:
+        """
+        Get the transform from the world frame (bottom left of the pit) to the
+        robot.
+        """
+        return self._tf_wr
 
-        key = cv2.waitKey(1)
-        if key == ord("q"):
-            break
+    def localise(self, img: cv2.typing.MatLike) -> np.ndarray | None:
+        """
+        Localise the robot in the world frame.
 
-        corners, ids, rejected = detector.detectMarkers(frame)
-        draw_axes(frame.copy(), marker_size, corners, mtx, dist)
+        Params:
+            img: The image to localise from.
 
-        if corners is None or ids is None:
-            continue
+        Returns:
+            The transformation matrix from the world frame (bottom left corner of the pit)
+            to the robot or None if it cannot be computed.
+        """
+        if not self.add_img(img):
+            return None
 
-        tf_cw = get_tf_cw(ids, corners, POINTS_IDS, marker_size, mtx, dist)
-        if tf_cw is not None:
-            tf_wc = np.linalg.inv(tf_cw)
+        return self._tf_wr
 
-        if tf_wc is None:
-            continue
+    def add_img(self, img: cv2.typing.MatLike) -> bool:
+        """
+        Add an image to localise from.
 
-        print(get_robot_pos(tf_wc, ids, corners, marker_size, mtx, dist))
+        Params:
+            img: The image to localise from.
 
+        Returns:
+            True if the robot localisation was successful.
+        """
+        corners, ids, rejected = self._aruco_detector.detectMarkers(img)
+        if ids is None:
+            return False
 
-def draw_axes(frame, marker_size, corners, mtx, dist) -> None:
-    marker_points = np.array(
-        [
-            [-marker_size / 2, marker_size / 2, 0],
-            [marker_size / 2, marker_size / 2, 0],
-            [marker_size / 2, -marker_size / 2, 0],
-            [-marker_size / 2, -marker_size / 2, 0],
-        ],
-        dtype=np.float32,
-    )
-    if corners is not None:
-        for corner in corners:
+        updated_tf_cw = self._update_tf_cw(ids, corners)
+        updated_tf_wr = self._update_tf_wr(ids, corners)
+        return updated_tf_cw and updated_tf_wr
+
+    def _update_tf_cw(
+        self, ids: cv2.typing.MatLike, corners: Sequence[cv2.typing.MatLike]
+    ) -> bool:
+        """
+        Update the transformation matrix from camera to world frame.
+
+        Params:
+            ids: The ids of the aruco markers detected in an image.
+            corners: The corresponding corner locations of the aruco markers in the
+                image.
+
+        Returns:
+            True if tf_cw was updated successfully.
+        """
+
+        res_t_vecs = []
+        res_ids = []
+
+        idx = np.isin(ids, self._corner_ids)
+        for id, corner in zip(ids[idx], np.array(corners)[idx]):
             success, r_vec, t_vec = cv2.solvePnP(
-                marker_points, corner, mtx, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
+                self._marker_points,
+                corner,
+                self._mtx,
+                self._dist,
+                flags=cv2.SOLVEPNP_IPPE_SQUARE,
             )
 
             if not success:
                 continue
 
-            cv2.drawFrameAxes(frame, mtx, dist, r_vec, t_vec, marker_size)
+            res_t_vecs.append(t_vec)
+            res_ids.append(id)
 
-    cv2.imshow("frame", frame)
-    key = cv2.waitKey(1)
-    if key == ord("q"):
-        exit(0)
+        if len(res_t_vecs) < 1:
+            return False
+
+        t_vecs = np.column_stack(res_t_vecs)
+        if t_vecs.shape[1] < 3 or self._corner_ids[2] not in res_ids:
+            # The bottom left marker was not detected or not enough points
+            # to estimate the pit plane
+            # TODO: ways that do not require the origin
+            # insufficient points to get the plane or origin not in points
+            return False
+
+        centroid = np.mean(t_vecs, axis=1, keepdims=True)
+        U, _, _ = np.linalg.svd(t_vecs - centroid)
+        # The last eigenvector will be normal to the best fit plane
+        new_z = U[:, -1]
+        # The normal vector should point towards the camera (the eigenvector may point the other way)
+        if new_z[-1] > 0:
+            new_z *= -1
+
+        idx = res_ids.index(self._corner_ids[2])
+        # translation from camera to world origin
+        t = t_vecs[:, idx]
+
+        if self._corner_ids[3] in res_ids:
+            # Choose the x axis in the direction from the bottom left marker to the
+            # bottom right
+            idx = res_ids.index(self._corner_ids[3])
+            new_x = (t_vecs[:, idx] - t).T
+            new_x /= np.linalg.norm(new_x)
+            # y axis is perp to both x and z
+            new_y = np.cross(new_z, new_x)
+        else:
+            # same as above but choose y direction
+            idx = res_ids.index(self._corner_ids[0])
+            new_y = (t_vecs[:, idx] - t).T
+            new_y /= np.linalg.norm(new_y)
+            new_x = np.cross(new_y, new_z)
+
+        R = np.column_stack((new_x.T, new_y.T, new_z.T))
+        tf_cw = np.eye(4)
+        tf_cw[:3, :3] = R
+        tf_cw[:3, 3] = t.T
+        self._tf_cw = tf_cw
+        return True
+
+    def _update_tf_wr(
+        self, ids: cv2.typing.MatLike, corners: Sequence[cv2.typing.MatLike]
+    ) -> bool:
+        """
+        Update the transformation matrix from world to the robot frame.
+
+        Params:
+            ids: The ids of the aruco markers detected in an image.
+            corners: The corresponding corner locations of the aruco markers in the
+                image.
+
+        Returns:
+            True if tf_wr was updated successfully.
+        """
+        if self._tf_cw is None:
+            return False
+
+        robot_ids = np.array(list(self._robot_markers.keys()))
+        idx = np.isin(ids, robot_ids)
+        robot_points = []
+        corners = np.array(corners)
+
+        # PERF: This should be precomputed in init and then result can just be
+        # indexed
+        for id, corner in zip(ids[idx], corners[idx]):
+            # Add all of the points detected on the robot in the robot frame
+            marker_points_homo = np.column_stack(
+                (self._marker_points, np.ones(self._marker_points.shape[0]))
+            )
+            points = (self._robot_markers[id] @ marker_points_homo.T).T[:, :-1]
+            robot_points.append(points)
+
+        if len(robot_points) < 1:
+            print("short")
+            return False
+
+        robot_points = np.vstack(robot_points)
+        success, r_vec, t_vec = cv2.solvePnP(
+            robot_points, corners[idx], self._mtx, self._dist
+        )
+
+        if not success:
+            print("Failed")
+            return False
+
+        tf_cr = np.eye(4)
+        R, _ = cv2.Rodrigues(r_vec)
+        tf_cr[:3, :3] = R
+        tf_cr[:3, 3] = t_vec.T
+
+        tf_wc = np.linalg.inv(self._tf_cw)
+        self._tf_wr = tf_wc @ tf_cr
+        return True
 
 
 def get_cam_params(file: str) -> tuple[np.ndarray, np.ndarray]:
@@ -128,144 +279,50 @@ def get_cam_params(file: str) -> tuple[np.ndarray, np.ndarray]:
     return mtx, dist
 
 
-def get_tf_cw(
-    ids: np.ndarray,
-    corners: np.ndarray,
-    point_ids: list[int],
-    marker_size: float,
-    mtx: np.ndarray,
-    dist: np.ndarray,
-) -> np.ndarray | None:
-    """
-    Get transform to the origin.
+def draw_axes(img, marker_size, tf, mtx, dist) -> None:
+    tvec = tf[:3, 3].T
+    rvec, _ = cv2.Rodrigues(tf[:3, :3])
+    cv2.drawFrameAxes(img, mtx, dist, rvec, tvec, marker_size)
 
-    Params:
-        ids: Aruco marker ids detected in the image.
-        corners: The locations of the corners of the aruco markers in the image (listed in the same order as ids).
-        point_ids: The ids of the aruco markers (top_left, top_right, bottom_left, bottom_right)
-        marker_size: The side length of the aruco markers in metres.
-        mtx: The camera intrinsics matrix.
-        dist: The distortion coefficients for the camera.
 
-    Returns:
-        The transformation matrix of camera to world with origin at bottom_left tag (with z facing up out of the plane) or None
-        if not enough markers were found.
-    """
-    marker_points = np.array(
-        [
-            [-marker_size / 2, marker_size / 2, 0],
-            [marker_size / 2, marker_size / 2, 0],
-            [marker_size / 2, -marker_size / 2, 0],
-            [-marker_size / 2, -marker_size / 2, 0],
-        ],
-        dtype=np.float32,
+def main(args=None):
+    # Example Usage
+    dev = args.device
+
+    cap = cv2.VideoCapture(dev)
+    if not cap.isOpened():
+        print("Could not open camera", file=sys.stderr)
+        exit(1)
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_FPS, 60)
+    print(f"fps: {cap.get(cv2.CAP_PROP_FPS)}")
+
+    mtx, dist = get_cam_params(args.cam_params)
+
+    # Locate the one marker
+    robot_markers = {4: np.eye(4)}
+    loc = Localisation(
+        mtx, dist, robot_markers, marker_size=args.square, dict_type=args.size
     )
 
-    res_t_vecs = []
-    res_ids = []
-
-    for id, corner in zip(ids, corners):
-        if id not in point_ids:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
             continue
 
-        success, r_vec, t_vec = cv2.solvePnP(
-            marker_points, corner, mtx, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
-        )
+        loc.add_img(frame)
+        tf_cw = loc.tf_cw
+        if tf_cw is not None:
+            draw_axes(frame, args.square, tf_cw, mtx, dist)
 
-        if not success:
-            continue
+        cv2.imshow("frame", frame)
+        key = cv2.waitKey(1)
+        if key == ord("q"):
+            exit(0)
 
-        res_t_vecs.append(t_vec)
-
-        res_ids.append(id)
-
-    if len(res_t_vecs) < 1:
-        return None
-
-    t_vecs = np.column_stack(res_t_vecs)
-    if t_vecs.shape[1] < 3 or point_ids[2] not in res_ids:
-        # TODO: ways that do not require the origin
-        # insufficient points to get the plane or origin not in points
-        return None
-
-    centroid = np.mean(t_vecs, axis=1, keepdims=True)
-    left, _, _ = np.linalg.svd(t_vecs - centroid)
-    new_z = left[:, -1]
-    # The normal vector should point towards the camera
-    if new_z[-1] > 0:
-        new_z *= -1
-
-    idx = res_ids.index(point_ids[2])
-    # translation to world origin
-    t = t_vecs[:, idx]
-
-    if point_ids[3] in res_ids:
-        idx = res_ids.index(point_ids[3])
-        new_x = (t_vecs[:, idx] - t).T
-        new_x /= np.linalg.norm(new_x)
-        new_y = np.cross(new_z, new_x)
-    else:
-        idx = res_ids.index(point_ids[0])
-        new_y = (t_vecs[:, idx] - t).T
-        new_y /= np.linalg.norm(new_y)
-        new_x = np.cross(new_y, new_z)
-
-    R = np.column_stack((new_x.T, new_y.T, new_z.T))
-    tf = np.eye(4)
-    tf[:3, :3] = R
-    tf[:3, 3] = t.T
-    return tf
-
-
-def get_robot_pos(
-    tf_wc: np.ndarray,
-    ids: np.ndarray,
-    corners: np.ndarray,
-    marker_size: float,
-    mtx: np.ndarray,
-    dist: np.ndarray,
-) -> np.ndarray | None:
-    """
-    Get the robot's pose.
-
-    Params:
-        tf_wc: Transformation matrix from world to camera frame.
-        ids: Aruco marker ids detected in the image.
-        corners: The locations of the corners of the aruco markers in the image (listed in the same order as ids).
-        marker_size: The side length of the aruco markers in metres.
-        mtx: The camera intrinsics matrix.
-        dist: The distortion coefficients for the camera.
-
-    Returns:
-        The robot's pose in the world frame.
-    """
-    # TODO: will use multiple tags... This can be slightly easier with ROS2 if we use it
-    if ROBOT_ID not in ids:
-        return None
-
-    marker_points = np.array(
-        [
-            [-marker_size / 2, marker_size / 2, 0],
-            [marker_size / 2, marker_size / 2, 0],
-            [marker_size / 2, -marker_size / 2, 0],
-            [-marker_size / 2, -marker_size / 2, 0],
-        ],
-        dtype=np.float32,
-    )
-    idx = np.where(ids == ROBOT_ID)[0][0]
-    success, r_vec, t_vec = cv2.solvePnP(
-        marker_points, corners[idx], mtx, dist, flags=cv2.SOLVEPNP_IPPE_SQUARE
-    )
-
-    if not success:
-        return None
-
-    tf_cr = np.eye(4)
-    R, _ = cv2.Rodrigues(r_vec)
-    tf_cr[:3, :3] = R
-    tf_cr[:3, 3] = t_vec.T
-
-    return tf_wc @ tf_cr
+        print(loc.tf_wr)
 
 
 if __name__ == "__main__":
@@ -273,5 +330,5 @@ if __name__ == "__main__":
     parser.add_argument("device")
     parser.add_argument("cam_params")
     parser.add_argument("--size", default=DEFAULT_SIZE)
-    parser.add_argument("--square", type=float, default=DEFAULT_SQUARE)
+    parser.add_argument("--square", type=float, default=0.12)
     main(parser.parse_args())
