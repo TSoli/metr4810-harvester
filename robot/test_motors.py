@@ -1,11 +1,14 @@
 import time
 
 import motors
+from logger import logger
 from machine import Pin
 
 
 def main():
+    logger.info("Starting")
     onboard = Pin(25, Pin.OUT, value=1)
+    logger.debug("LED on")
     left_drive_motor = motors.DCMotor(
         motors.LEFT_MOTOR_PWM_PIN, motors.LEFT_MOTOR_DIR_PIN
     )
