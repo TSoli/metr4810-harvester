@@ -10,28 +10,49 @@ class DifferentialDrive:
         self,
         left_motor: DCMotor,
         right_motor: DCMotor,
-        max_speed: float,
-        radius: float,
+        drive_radius: float,
+        wheel_radius: float,
     ) -> None:
         """
         Params:
             left_motor: The left motor of the robot.
             right_motor: The right motor of the robot.
-            max_speed: The max speed of wheels in m/s.
             drive_radius: The distance from the centre of the robot to the drive motors.
+            wheel_radius: The radius of the wheels.
         """
         self._left_motor = left_motor
         self._right_motor = right_motor
-        self._max_speed = max_speed
-        self._drive_radius = radius
+        self._drive_radius = drive_radius
+        self._wheel_radius = wheel_radius
+        # left and right motors are assumed to have the same max speed.
+        self._v_max = self._wheel_radius * self._left_motor.max_speed
+        self._omega_max = self._v_max * self._drive_radius
+
+    @property
+    def v_max(self) -> float:
+        """
+        The maximum speed of the drive system in m/s.
+
+        Note this is only achievable if moving straight.
+        """
+        return self._v_max
+
+    @property
+    def omega_max(self) -> float:
+        """
+        The maximum angular velocity of the drive system in m/s.
+
+        Note this is only achievable if rotating on the spot.
+        """
+        return self._omega_max
 
     def drive(self, v: float, omega: float) -> None:
         """
         Set the drive velocities for the motors.
 
         Params:
-            v: The linear velocity of the robot in m/s.
-            omega: The angular velocity of the robot in rad/s (assuming the vector)
+            v: The linear velocity of the system in m/s.
+            omega: The angular velocity of the system in rad/s (assuming the vector)
                 points up out of the robot).
 
         Returns:
@@ -44,13 +65,19 @@ class DifferentialDrive:
         """
         vl = v - self._drive_radius * omega
         vr = v + self._drive_radius * omega
-        vl_norm = vl / self._max_speed
-        vr_norm = vr / self._max_speed
-        self._left_motor.speed = vl_norm
-        self._right_motor = vr_norm
+        l_speed = vl / self._wheel_radius
+        r_speed = vr / self._wheel_radius
 
-        if not (-1 < vl_norm < 1):
-            print(f"vl was clipped: vl={vl_norm}", file=sys.stderr)
+        self._left_motor.speed = l_speed
+        self._right_motor.speed = r_speed
+        if not (abs(l_speed) <= self._left_motor.max_speed):
+            print(
+                f"Warning: left motor speed was clipped from {l_speed} to {self._left_motor.speed}",
+                file=sys.stderr,
+            )
 
-        if not (-1 < vr_norm < 1):
-            print(f"vr was clipped: vl={vr_norm}", file=sys.stderr)
+        if not abs(r_speed) <= self._right_motor.max_speed:
+            print(
+                f"Warning: right motor speed was clipped from {r_speed} to {self._right_motor.speed}",
+                file=sys.stderr,
+            )
