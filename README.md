@@ -15,7 +15,7 @@ The software is written using Python 3.11 and
 2. Create a virtual environment for Python and install the required packages.
 
 ```sh
-pyton -m venv robot/venv
+python -m venv robot/venv
 source robot/venv/bin/activate # or similar for Windows
 pip install -r robot/requirements.txt
 ```
