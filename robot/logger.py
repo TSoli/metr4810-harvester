@@ -1,6 +1,27 @@
 import logging
 
+import uio
 import uos
+
+
+class StreamToLogger(uio.IOBase):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def write(self, data):
+        data = data.decode()
+        if data == "\r\n":
+            return 0
+
+        self.logger.info(data)
+        return len(data)
+
+    def read(self, n=-1):
+        return ""  # No-op for read, as we're only handling writes
+
+    def readinto(self, buf):
+        # No-op readinto; return 0 to indicate no bytes read, making it compatible with uos.dupterm
+        return 0
 
 
 def _setup_logger() -> logging.Logger:
@@ -20,8 +41,10 @@ def _setup_logger() -> logging.Logger:
         level=logging.DEBUG,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+    logger = logging.getLogger("RobotLogger")
 
-    return logging.getLogger("RobotLogger")
+    uos.dupterm(StreamToLogger(logger))
+    return logger
 
 
 logger = _setup_logger()
