@@ -1,5 +1,4 @@
-import sys
-
+from logger import logger
 from motors import DCMotor
 
 
@@ -71,13 +70,11 @@ class DifferentialDrive:
         self._left_motor.speed = l_speed
         self._right_motor.speed = r_speed
         if not (abs(l_speed) <= self._left_motor.max_speed):
-            print(
-                f"Warning: left motor speed was clipped from {l_speed} to {self._left_motor.speed}",
-                file=sys.stderr,
+            logger.warn(
+                f"Left motor speed was clipped from {l_speed} to {self._left_motor.speed}"
             )
 
         if not abs(r_speed) <= self._right_motor.max_speed:
-            print(
-                f"Warning: right motor speed was clipped from {r_speed} to {self._right_motor.speed}",
-                file=sys.stderr,
+            logger.warn(
+                f"Right motor speed was clipped from {r_speed} to {self._right_motor.speed}"
             )
