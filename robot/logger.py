@@ -7,13 +7,16 @@ import uos
 class StreamToLogger(uio.IOBase):
     def __init__(self, logger: logging.Logger):
         self.logger = logger
+        self.buffer = ""
 
     def write(self, data):
-        data = data.decode()
-        if data == "\r\n":
-            return 0
+        msg = data.decode()
+        self.buffer += msg
 
-        self.logger.info(data)
+        if self.buffer.endswith("\n"):
+            self.logger.info(self.buffer.rstrip())
+            self.buffer = ""
+
         return len(data)
 
     def read(self, n=-1):
