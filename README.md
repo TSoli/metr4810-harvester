@@ -34,3 +34,6 @@ boot.
 
 Tutorial:
 https://coffeebreakpoint.com/micropython/how-to-connect-a-nrf24l01-transceiver-to-your-raspberry-pi-pico/
+
+## Test 
+test
