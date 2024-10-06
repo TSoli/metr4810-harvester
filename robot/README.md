@@ -1,4 +1,4 @@
-# Pico W Multicore Operation + Netowrking
+# Pico W Multicore Operation + Networking
 
 Architecture:
 
