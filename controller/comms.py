@@ -95,5 +95,5 @@ class Comms:
 
         logger.info(f"Sending:\n{data}")
         response = self._session.post(self._ip, data=json.dumps(data))
-        logger.info(f"Response:\nHeaders:\n{response.headers}\nText:{response.text}")
+        logger.info(f"Response:\nHeaders:\n{response.headers}\nText: {response.text}")
         return response.ok

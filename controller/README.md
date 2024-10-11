@@ -5,6 +5,8 @@ controller.
 
 ## Getting Started
 
+### Localisation
+
 1. Calibrate the camera that is being used. Ensure that the intrinsic camera
    parameters will not change during recording (e.g due to auto focus).
    Instructions for camera calibration with ROS2 can be found
@@ -31,3 +33,21 @@ E.g for the IP Webcam setup, the device would be the IP address followed by
 ```sh
 python localisation.py "https://192.168.0.12:8080/video" calibration/ost.yaml --size DICT_4X4_50 --square 0.09
 ```
+
+### Communications
+
+The communications with the robot are via a HTTP requests. The robot and the
+controller must be connected to the same network.
+
+1. Create a file in the `controller` directory called `comms_config.json` and
+   add the ip address of the pico. E.g.
+
+```json
+{
+  "ip": "192.168.0.123"
+}
+```
+
+2. An example test file can be found in `controller/test/test_comms.py` which
+   connects to a socket running on the pico and sends some commands for the
+   robot.
