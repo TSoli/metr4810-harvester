@@ -7,18 +7,80 @@ Architecture:
 
 A shared data strcuture like a queue can be used to send data between threads.
 
-## Setting up pico W as Wifi Access Point 
+## Getting Started
 
-- The `network` module in micropython allows the pico to act as a wifi access point to allow devices like a laptop to connect directly to the picos network so it can rceieve and respond to requests.
-- The default IPv4 address is `192.168.4.1`. This may be soemthing want to change to avoid getting requests from other people systems during operation. 
+1. First install the
+   [MicroPython firmware for the Raspberry Pi Pico](https://micropython.org/download/RPI_PICO/).
+   The software was written using v1.23.0.
 
-Use the '_thread' library to run a program on the pico's second core.
+2. Create a virtual environment for Python and install the required packages on
+   your computer. (This is optional but includes stubs for the micropython
+   libraries and `rshell` and `mpremote` used to talk to the Pico W).
+
+```sh
+cd robot
+python -m venv venv
+source venv/bin/activate # or similar for Windows
+pip install -r requirements.txt
+```
+
+3. Connect the Pico W to the computer and upload the software files to the
+   robot.
+
+#### Using `rshell`:
+
+```sh
+rshell
+>>> cp [file] /pyboard/
+```
+
+#### Using `mpremote`:
+
+```sh
+mpremote connect [device_name] cp [file] :
+```
+
+Note, the device name is something like `/dev/ttyACM0` on linux. Probably
+similar on Mac and I am not sure on Windows - try google it.
+
+Note the file named `main.py` is the script that will run automatically after
+boot.
+
+4. Install required micropython libraries.
+
+```sh
+mpremote connect [device] mip install [package]
+```
+
+A list of the required packages can be found in `robot/micropython_reqs.txt`
+
+5. Create a file `wifi.json` with the following format.
+
+```json
+{
+  "ssid": "[ssid]",
+  "password": "[password]"
+}
+```
+
+and upload it to the root on the Pico as in step 3.
+
+## Setting up pico W as Wifi Access Point
+
+- The `network` module in micropython allows the pico to act as a wifi access
+  point to allow devices like a laptop to connect directly to the picos network
+  so it can rceieve and respond to requests.
+- The default IPv4 address is `192.168.4.1`. This may be soemthing want to
+  change to avoid getting requests from other people systems during operation.
+
+Use the '\_thread' library to run a program on the pico's second core.
 
 Simple Example: https://www.youtube.com/watch?v=mm1EoNqjd4c
 
 ## Example Code
 
-This code is AI generated but serves as an example how we could receive POST requests containing JSON and process them on the second core:
+This code is AI generated but serves as an example how we could receive POST
+requests containing JSON and process them on the second core:
 
 ```
 
@@ -62,7 +124,7 @@ def server_thread():
             # Parse request body (assume it's JSON for this example)
             content_length = int(request.split("Content-Length: ")[1].split("\r\n")[0])
             body = cl.recv(content_length).decode('utf-8')
-            
+
             # Decode JSON data from POST request
             try:
                 data = ujson.loads(body)
@@ -77,7 +139,7 @@ def server_thread():
             except Exception as e:
                 print("Error decoding request:", e)
                 response = 'HTTP/1.1 400 Bad Request\n\nError decoding JSON'
-        
+
         else:
             response = 'HTTP/1.1 405 Method Not Allowed\n\nOnly POST allowed'
 
@@ -114,15 +176,9 @@ while True:
 ```
 
 Then a post request could be made to `http://192.168.10.1` with this data:
+
 ```
 {
   "command": "on"
 }
 ```
-
-
-
-
-
-
-

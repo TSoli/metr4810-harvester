@@ -1,6 +1,11 @@
 # logs
 logs/
 log/
+
+# wifi details
+**/wifi.json
+**/comms_config.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
