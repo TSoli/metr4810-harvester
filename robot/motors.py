@@ -3,11 +3,17 @@ import math
 from machine import PWM, Pin
 
 U16_MAX = 65535
+DRIVE_MAX_RPM = 100
 LEFT_MOTOR_PWM_PIN = 12
 LEFT_MOTOR_DIR_PIN = 13
 RIGHT_MOTOR_PWM_PIN = 14
 RIGHT_MOTOR_DIR_PIN = 15
-ARM_MOTOR_PWM_PIN = 2  # Use MISC servo pin due to clearance on PCB
+SCOOP_MOTOR_PWM_PIN = 2  # Use MISC servo pin due to clearance on PCB
+CONTAINER_MOTOR_PWM_PIN = 0
+VIB_MOTOR_PWM_PIN = 10
+VIB_MOTOR_DIR_PIN = 11
+VIB_MOTOR_FREQ = 50_000
+VIB_MAX_RPM = 6_500
 
 
 class DCMotor:

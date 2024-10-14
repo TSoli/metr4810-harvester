@@ -1,9 +1,12 @@
+from queue import Queue
+
 from comms import Comms
 from logger import logger
 
 
 def main() -> None:
-    comms = Comms()
+    commands = Queue()
+    comms = Comms(commands)
     comms.connect()
     logger.info(f"Connected")
     comms.run()
