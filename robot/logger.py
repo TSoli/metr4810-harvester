@@ -51,8 +51,3 @@ def _setup_logger() -> logging.Logger:
 
 
 logger = _setup_logger()
-
-
-def flush_logger() -> None:
-    for handler in logger.handlers:
-        handler.flush()

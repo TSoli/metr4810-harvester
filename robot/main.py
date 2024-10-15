@@ -55,7 +55,6 @@ def handle_command(
     led: Led,
 ) -> None:
     command_type = command.get("type")
-    logger.info(f"Command: {command}")
     if command_type == "drive":
         v = command.get("v")
         w = command.get("w")
@@ -101,7 +100,7 @@ def control(
         success = False
         command = None
         while not success:
-            success, command = commands.pop()  # type: ignore
+            success, command = commands.pop()
 
         logger.info(f"Got command: {command}")
         if not isinstance(command, dict):

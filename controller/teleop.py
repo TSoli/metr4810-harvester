@@ -20,8 +20,8 @@ class Controller:
         self._max_v = max_v
         self._max_w = max_w
         self._comms = comms
-        self._v = 0
-        self._w = 0
+        self._v = 0.0
+        self._w = 0.0
         self._scoop = False
         self._container = False
         self._led = False
@@ -33,25 +33,25 @@ class Controller:
             return
 
         if char == "w":
-            self._v = min(self._v + 0.01, self._max_v)
+            self._v = float(min(self._v + 0.01, self._max_v))
             print(f"v: {self._v:.2f} w: {self._w:.2f}")
             self._comms.send_drive_request(self._v, self._w)
         elif char == "x":
-            self._v = max(self._v - 0.01, -self._max_v)
+            self._v = float(max(self._v - 0.01, -self._max_v))
             print(f"v: {self._v:.2f} w: {self._w:.2f}")
             self._comms.send_drive_request(self._v, self._w)
         elif char == "s":
             # stop
-            self._v = 0
-            self._w = 0
+            self._v = 0.0
+            self._w = 0.0
             print("Stop!")
             self._comms.send_drive_request(self._v, self._w)
         elif char == "a":
-            self._w = min(self._w + math.pi / 16, self._max_w)
+            self._w = float(min(self._w + math.pi / 16, self._max_w))
             print(f"v: {self._v:.2f} w: {self._w:.2f}")
             self._comms.send_drive_request(self._v, self._w)
         elif char == "d":
-            self._w = max(self._w - math.pi / 16, -self._max_w)
+            self._w = float(max(self._w - math.pi / 16, -self._max_w))
             print(f"v: {self._v:.2f} w: {self._w:.2f}")
             self._comms.send_drive_request(self._v, self._w)
         elif char == "q":
@@ -92,3 +92,7 @@ def main():
 
     with keyboard.Listener(on_press=controller.on_press) as listener:
         listener.join()
+
+
+if __name__ == "__main__":
+    main()
