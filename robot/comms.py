@@ -56,43 +56,54 @@ class Comms:
 
     def run(self) -> None:
         """Start accepting messages"""
-        self._open_socket()
+        try:
+            self._open_socket()
 
-        # TODO: Handle sending logs?
-        while True:
-            cl, addr = self._socket.accept()  # type: ignore
-            logger.info(f"Client connected from: {addr}")
+            # TODO: Handle sending logs?
             while True:
-                headers = cl.recv(1024).decode()
-                if not headers:
-                    cl.close()
-                    logger.info(f"Closing connection to {addr}")
+                cl, addr = self._socket.accept()  # type: ignore
+                logger.info(f"Client connected from: {addr}")
+                while True:
+                    headers = cl.recv(1024).decode()
+                    if not headers:
+                        cl.close()
+                        logger.info(f"Closing connection to {addr}")
+                        break
+
+                    content_length = int(
+                        headers.split("Content-Length: ")[1].split("\r\n")[0]
+                    )
+
+                    if "Content-Type" in headers:
+                        content_type = headers.split("Content-Type: ")[1].split("\r\n")[
+                            0
+                        ]
+                    else:
+                        content_type = None
+
+                    body = cl.recv(content_length).decode()
+                    if not body:
+                        cl.close()
+                        logger.info(f"Closing connection to {addr}")
+                        break
+                    # headers, body = request.split("\r\n\r\n", 1)
+
+                    # TODO: Update message? Do we even need a body/text?
+                    message = "Hello!"
+                    # Prepare response
+                    headers = f"HTTP/1.0 200 OK\r\nContent-type: text/plain\r\nContent-Length: {len(message)}\r\n\r\n"
+                    cl.send(headers.encode())
+                    cl.send(message.encode())
+
+                    if content_type == "application/json":
+                        command = json.loads(body)
+                        self._queue_command(command)
+                    else:
+                        logger.debug("Unknown message type")
+
                     break
-
-                content_length = int(
-                    headers.split("Content-Length: ")[1].split("\r\n")[0]
-                )
-
-                if "Content-Type" in headers:
-                    content_type = headers.split("Content-Type: ")[1].split("\r\n")[0]
-                else:
-                    content_type = None
-
-                body = cl.recv(content_length).decode()
-                # headers, body = request.split("\r\n\r\n", 1)
-
-                # TODO: Update message? Do we even need a body/text?
-                message = "Hello!"
-                # Prepare response
-                headers = f"HTTP/1.0 200 OK\r\nContent-type: text/plain\r\nContent-Length: {len(message)}\r\nConnection: keep-alive\r\n\r\n"
-                cl.send(headers.encode())
-                cl.send(message.encode())
-
-                if content_type == "application/json":
-                    command = json.loads(body)
-                    self._queue_command(command)
-                else:
-                    logger.debug("Unknown message type")
+        except Exception as e:
+            logger.warning(e)
 
     def _open_socket(self) -> None:
         """
@@ -107,7 +118,6 @@ class Comms:
         # Only one device should connect - the controller
         connection.listen(1)
         self._socket = connection
-        self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     def _queue_command(self, command: dict) -> None:
         """

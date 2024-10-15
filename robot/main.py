@@ -55,37 +55,38 @@ def handle_command(
     led: Led,
 ) -> None:
     command_type = command.get("type")
+    logger.info(f"Command: {command}")
     if command_type == "drive":
         v = command.get("v")
         w = command.get("w")
         if not isinstance(v, float) or not isinstance(v, float):
-            logger.warn(f"Ignoring drive command with v: {v}, w: {w}")
+            logger.warning(f"Ignoring drive command with v: {v}, w: {w}")
             return
 
         drive.drive(v, w)
     elif command_type == "scoop":
         up = command.get("up")
         if not isinstance(up, bool):
-            logger.warn(f"Ignoring scoop command with up: {up}")
+            logger.warning(f"Ignoring scoop command with up: {up}")
             return
 
         scoop.up() if up else scoop.down()
     elif command_type == "container":
         open = command.get("open")
         if not isinstance(open, bool):
-            logger.warn(f"Ignoring container command with open: {open}")
+            logger.warning(f"Ignoring container command with open: {open}")
             return
 
         container.open() if open else container.close()
     elif command_type == "led":
         on = command.get("on")
         if not isinstance(on, bool):
-            logger.warn(f"Ignoring LED command with on: {on}")
+            logger.warning(f"Ignoring LED command with on: {on}")
             return
 
         led.value(on)
     else:
-        logger.warn(f"Received unknown command type: {command_type}")
+        logger.warning(f"Received unknown command type: {command_type}")
 
 
 def control(
@@ -104,7 +105,7 @@ def control(
 
         logger.info(f"Got command: {command}")
         if not isinstance(command, dict):
-            logger.warn(f"Got command object: {type(command)} but expected dict")
+            logger.warning(f"Got command object: {type(command)} but expected dict")
             continue
 
         handle_command(command, drive, scoop, container, led)
@@ -116,7 +117,10 @@ def main():
     comms = Comms(commands)
     comms.connect()
     _thread.start_new_thread(comms.run, ())
-    control(drive, scoop, container, led, commands)
+    try:
+        control(drive, scoop, container, led, commands)
+    except Exception as e:
+        logger.warning(e)
 
 
 if __name__ == "__main__":

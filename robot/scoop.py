@@ -19,7 +19,7 @@ class Scoop:
 
         self._vib_motor.speed = 0
         time.sleep(0.2)
-        self._servo.angle = self._servo.max_angle - math.pi
+        self._servo.angle = self._servo.max_angle - (3 * math.pi / 4)
 
     def down(self) -> None:
         """Lower the scoop"""

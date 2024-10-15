@@ -70,11 +70,11 @@ class DifferentialDrive:
         self._left_motor.speed = l_speed
         self._right_motor.speed = r_speed
         if not (abs(l_speed) <= self._left_motor.max_speed):
-            logger.warn(
+            logger.warning(
                 f"Left motor speed was clipped from {l_speed} to {self._left_motor.speed}"
             )
 
         if not abs(r_speed) <= self._right_motor.max_speed:
-            logger.warn(
+            logger.warning(
                 f"Right motor speed was clipped from {r_speed} to {self._right_motor.speed}"
             )
