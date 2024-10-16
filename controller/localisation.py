@@ -8,7 +8,78 @@ import yaml
 
 DEFAULT_SIZE = "DICT_4X4_50"
 POINTS_IDS = [0, 1, 2, 3]  # IDs of the aruco markers at the corners of the pit
-ROBOT_ID = 4  # ID for aruco marker on the robot
+ROBOT_MARKERS = {
+    # TOP MARKER
+    10: np.array(
+        [
+            [1, 0, 0, 0],
+            [0, 1, 0, -0.055],
+            [0, 0, 1, 0.344],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    # FRONT
+    6: np.array(
+        [
+            [-1, 0, 0, 0],
+            [0, 0, 1, 0.038],
+            [0, 1, 0, 0.252],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    # BACK
+    4: np.array(
+        [
+            [1, 0, 0, 0],
+            [0, 0, -1, -0.148],
+            [0, 1, 0, 0.252],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    # LEFT TOP
+    7: np.array(
+        [
+            [0, 0, -1, -0.103],
+            [-1, 0, 0, -0.055],
+            [0, 1, 0, 0.257],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    # LEFT BOTTOM
+    9: np.array(
+        [
+            [0, 0, -1, -0.103],
+            [-1, 0, 0, -0.055],
+            [0, 1, 0, 0.087],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    # RIGHT TOP
+    5: np.array(
+        [
+            [0, 0, 1, 0.103],
+            [1, 0, 0, -0.055],
+            [0, 1, 1, 0.257],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    # RIGHT BOTTOM
+    8: np.array(
+        [
+            [0, 0, 1, 0.103],
+            [1, 0, 0, -0.055],
+            [0, 1, 1, 0.087],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+}
 
 
 class Localisation:
@@ -223,6 +294,7 @@ class Localisation:
         idx = np.isin(ids, robot_ids)
         robot_points = []
         corners = np.array(corners)
+        print(f"Corners: {corners.shape}")
 
         # PERF: This should be precomputed in init and then result can just be
         # indexed
@@ -238,9 +310,14 @@ class Localisation:
             print("short")
             return False
 
+        print(f"C2: {corners[idx].shape}")
         robot_points = np.vstack(robot_points)
         success, r_vec, t_vec = cv2.solvePnP(
-            robot_points, corners[idx], self._mtx, self._dist
+            robot_points,
+            np.vstack(corners[idx]),
+            self._mtx,
+            self._dist,
+            flags=cv2.SOLVEPNP_ITERATIVE,
         )
 
         if not success:
@@ -302,9 +379,8 @@ def main(args=None):
     mtx, dist = get_cam_params(args.cam_params)
 
     # Locate the one marker
-    robot_markers = {4: np.eye(4)}
     loc = Localisation(
-        mtx, dist, robot_markers, marker_size=args.square, dict_type=args.size
+        mtx, dist, ROBOT_MARKERS, marker_size=args.square, dict_type=args.size
     )
 
     while True:
@@ -317,12 +393,16 @@ def main(args=None):
         if tf_cw is not None:
             draw_axes(frame, args.square, tf_cw, mtx, dist)
 
+            if loc.tf_wr is not None:
+                tf_cr = tf_cw @ loc.tf_wr
+                draw_axes(frame, args.square, tf_cr, mtx, dist)
+
         cv2.imshow("frame", frame)
         key = cv2.waitKey(1)
         if key == ord("q"):
             exit(0)
 
-        print(loc.tf_wr)
+        # print(loc.tf_wr)
 
 
 if __name__ == "__main__":
