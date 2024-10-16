@@ -59,11 +59,14 @@ A list of the required packages can be found in `robot/micropython_reqs.txt`
 ```json
 {
   "ssid": "[ssid]",
-  "password": "[password]"
+  "password": "[password]",
+  "ip": "[ip]"
 }
 ```
 
-and upload it to the root on the Pico as in step 3.
+and upload it to the root on the Pico as in step 3. The SSID and password are
+for the wifi network and the ip is the ip address the pico will try to connect
+with.
 
 ## Setting up pico W as Wifi Access Point
 

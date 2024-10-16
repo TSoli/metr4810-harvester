@@ -19,7 +19,6 @@ def main():
     right_drive_motor = DCMotor(
         motors.RIGHT_MOTOR_PWM_PIN, motors.RIGHT_MOTOR_DIR_PIN, max_motor_speed
     )
-    max_speed = 0.1  # m/s
     drive_radius = 0.0837  # distance from centre to tracks
     wheel_radius = 0.0396
     drive = DifferentialDrive(

@@ -39,18 +39,18 @@ class Comms:
         request = {"type": MessageTypes.DRIVE, "v": v, "w": w}
         return self._send_command(request)
 
-    def send_scoop_request(self, direction: str) -> bool:
+    def send_scoop_request(self, up: bool) -> bool:
         """
         Send a scoop command to control the robot's scoop mechanism.
 
         Args:
-            direction (str): The direction of the scoop movement.
+            up: True to lift scoop or False to lower.
 
         Returns:
             bool: True if the request was successful, False otherwise.
         """
 
-        request = {"type": MessageTypes.SCOOP, "direction": direction}
+        request = {"type": MessageTypes.SCOOP, "up": up}
         return self._send_command(request)
 
     def send_led_request(self, on: bool) -> bool:
@@ -63,7 +63,7 @@ class Comms:
         Returns:
             bool: True if the request was successful, False otherwise.
         """
-        request = {"type": MessageTypes.LED, "on": 1 if on else 0}
+        request = {"type": MessageTypes.LED, "on": on}
         return self._send_command(request)
 
     def send_container_request(self, open: bool) -> bool:
@@ -94,6 +94,6 @@ class Comms:
             logger.warn(f"Sending command without type:\n{data}")
 
         logger.info(f"Sending:\n{data}")
-        response = self._session.post(self._ip, data=json.dumps(data))
+        response = self._session.post(self._ip, json=data)
         logger.info(f"Response:\nHeaders:\n{response.headers}\nText: {response.text}")
         return response.ok

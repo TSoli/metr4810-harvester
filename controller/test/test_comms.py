@@ -1,8 +1,7 @@
 import json
 import os
 import sys
-
-import requests
+import time
 
 parent_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_directory)
@@ -17,8 +16,11 @@ def main():
     ip = data["ip"]
     comms = Comms(ip)
     comms.send_led_request(True)
+    time.sleep(0.5)
     comms.send_drive_request(1, 1)
+    time.sleep(0.5)
     comms.send_scoop_request("up")
+    time.sleep(0.5)
     comms.send_container_request(False)
 
 
