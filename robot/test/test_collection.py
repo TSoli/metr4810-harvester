@@ -2,68 +2,61 @@ import math
 import time
 
 import motors
+from container import Container
 from drive import DifferentialDrive
 from machine import Pin
-from motors import DCMotor
+from motors import DCMotor, Servo
+from scoop import Scoop
 
 RPM_TO_RAD_S = 2 * math.pi / 60
 
 
-def lift_motor(scoop_motor: motors.Servo, vibration_motor: motors.DCMotor) -> None:
-    scoop_motor.angle = scoop_motor.max_angle
-    time.sleep(0.5)
-    for i in range(10):
-        scoop_motor.angle = scoop_motor.max_angle - (i * math.pi / 36)
-        time.sleep(0.1)
+RPM_TO_RAD_S = 2 * math.pi / 60
+DRIVE_RADIUS = 0.0837  # distance from centre to tracks in m
+WHEEL_RADIUS = 0.0396  # radius of wheel in m
 
-    vibration_motor.speed = 0
-    time.sleep(0.2)
-    scoop_motor.angle = scoop_motor.max_angle - math.pi
+Led = Pin
 
 
-def drop_motor(scoop_motor: motors.Servo, vibration_motor: motors.DCMotor) -> None:
-    scoop_motor.angle = scoop_motor.max_angle - (math.pi / 4)
-    time.sleep(0.2)
-    vibration_motor.speed = 0.6 * vibration_motor.max_speed
-    for i in range(10):
-        scoop_motor.angle = scoop_motor.max_angle - (math.pi / 4) + (math.pi * i / 36)
-        time.sleep(0.1)
-
-    scoop_motor.angle = scoop_motor.max_angle
+def setup_actuators() -> tuple[DifferentialDrive, Scoop, Container, Led]:
+    """Setup the motors"""
+    left_drive_motor = DCMotor(
+        motors.LEFT_MOTOR_PWM_PIN,
+        motors.LEFT_MOTOR_DIR_PIN,
+        motors.DRIVE_MAX_RPM * RPM_TO_RAD_S,
+    )
+    right_drive_motor = DCMotor(
+        motors.RIGHT_MOTOR_PWM_PIN,
+        motors.RIGHT_MOTOR_DIR_PIN,
+        motors.DRIVE_MAX_RPM * RPM_TO_RAD_S,
+    )
+    scoop_motor = Servo(motors.SCOOP_MOTOR_PWM_PIN)
+    vib_motor = DCMotor(
+        motors.VIB_MOTOR_PWM_PIN,
+        motors.VIB_MOTOR_DIR_PIN,
+        motors.VIB_MAX_RPM * RPM_TO_RAD_S,
+        freq=50_000,
+    )
+    container_servo = Servo(motors.CONTAINER_MOTOR_PWM_PIN)
+    container = Container(container_servo)
+    drive = DifferentialDrive(
+        left_drive_motor, right_drive_motor, DRIVE_RADIUS, WHEEL_RADIUS
+    )
+    scoop = Scoop(scoop_motor, vib_motor)
+    led = Pin(25, Pin.OUT)
+    return drive, scoop, container, led
 
 
 def main():
-    onboard = Pin(25, Pin.OUT, value=1)
-    max_rpm = 100
-    max_motor_speed = max_rpm * RPM_TO_RAD_S
-    left_drive_motor = DCMotor(
-        motors.LEFT_MOTOR_PWM_PIN, motors.LEFT_MOTOR_DIR_PIN, max_motor_speed
-    )
-    right_drive_motor = DCMotor(
-        motors.RIGHT_MOTOR_PWM_PIN, motors.RIGHT_MOTOR_DIR_PIN, max_motor_speed
-    )
-    scoop_motor = motors.Servo(motors.ARM_MOTOR_PWM_PIN)
-    max_vib_speed = 100 * RPM_TO_RAD_S
-    vibration_motor = motors.DCMotor(10, 11, max_vib_speed, freq=50_000)
-    drive_radius = 0.0837  # distance from centre to tracks
-    wheel_radius = 0.0396
-    drive = DifferentialDrive(
-        left_drive_motor, right_drive_motor, drive_radius, wheel_radius
-    )
-
-    time.sleep(1)
-    scoop_motor.angle = scoop_motor.max_angle
-    vibration_motor.speed = 0.6 * vibration_motor.max_speed
-    # extra_motor.speed = 0.5 * extra_motor.max_speed
-    time.sleep(1)
-    # drive.drive(0.5 * drive.v_max, 0)
+    drive, scoop, container, led = setup_actuators()
     while True:
-        drive.drive(0.5 * drive.v_max, 0)
-        time.sleep(2)
-        drive.drive(0, 0)
-        lift_motor(scoop_motor, vibration_motor)
+        scoop.down()
         time.sleep(1)
-        drop_motor(scoop_motor, vibration_motor)
+        drive.drive(0.5 * drive.v_max, 0)
+        time.sleep(3)
+        drive.drive(0, 0)
+        scoop.up()
+        time.sleep(1)
 
 
 if __name__ == "__main__":
