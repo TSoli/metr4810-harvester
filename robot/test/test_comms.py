@@ -1,3 +1,4 @@
+import _thread
 from queue import Queue
 
 from comms import Comms
@@ -9,10 +10,7 @@ def main() -> None:
     comms = Comms(commands)
     comms.connect()
     logger.info(f"Connected")
-    try:
-        comms.run()
-    except Exception as e:
-        logger.info(e)
+    comms.run()
 
 
 if __name__ == "__main__":

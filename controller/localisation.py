@@ -98,11 +98,50 @@ ROBOT_MARKERS = {
     ),
 }
 
+WORLD_TO_CORNERS = {
+    0: np.array(
+        [
+            [1, 0, 0, 0],
+            [0, 1, 0, 2.0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    1: np.array(
+        [
+            [1, 0, 0, 2.0],
+            [0, 1, 0, 2.0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    2: np.array(
+        [
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    3: np.array(
+        [
+            [1, 0, 0, 2.0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+}
+
 CORNER_MARKERS = {
     0: np.array(
         [
-            [0, -1, 0, -0.215],
-            [1, 0, 0, 0.085],
+            [0, 1, 0, -0.085],
+            [-1, 0, 0, -0.215],
             [0, 0, 1, 0],
             [0, 0, 0, 1],
         ],
@@ -470,7 +509,8 @@ class Localisation:
             res_t_vecs.append(t_vec)
             res_ids.append(id)
 
-        if len(res_t_vecs) < 1:
+        if len(corner_points) < 1:
+            logger.warning("No corners detected")
             return False
 
         t_vecs = np.column_stack(res_t_vecs)
@@ -488,38 +528,6 @@ class Localisation:
             logger.warning("Failed to estimate origin")
             return False
 
-        centroid = np.mean(t_vecs, axis=1, keepdims=True)
-        U, _, _ = np.linalg.svd(t_vecs - centroid)
-        # The last eigenvector will be normal to the best fit plane
-        new_z = U[:, -1]
-        # The normal vector should point towards the camera (the eigenvector may point the other way)
-        if new_z[-1] > 0:
-            new_z *= -1
-
-        #
-        idx = res_ids.index(bottom_left_id)
-        # translation from camera to world origin
-        t = t_vecs[:, idx]
-
-        top_left_id = 0
-        bottom_right_id = 3
-
-        if bottom_right_id in res_ids:
-            # Choose the x axis in the direction from the bottom left marker to the
-            # bottom right
-            idx = res_ids.index(bottom_right_id)
-            new_x = (t_vecs[:, idx] - t).T
-            new_x /= np.linalg.norm(new_x)
-            # y axis is perp to both x and z
-            new_y = np.cross(new_z, new_x)
-        else:
-            # same as above but choose y direction
-            idx = res_ids.index(top_left_id)
-            new_y = (t_vecs[:, idx] - t).T
-            new_y /= np.linalg.norm(new_y)
-            new_x = np.cross(new_y, new_z)
-
-        R = np.column_stack((new_x.T, new_y.T, new_z.T))
         tf_cw = np.eye(4)
         R, _ = cv2.Rodrigues(r_vec)
         tf_cw[:3, :3] = R
