@@ -9,7 +9,10 @@ def main() -> None:
     comms = Comms(commands)
     comms.connect()
     logger.info(f"Connected")
-    comms.run()
+    try:
+        comms.run()
+    except Exception as e:
+        logger.info(e)
 
 
 if __name__ == "__main__":
