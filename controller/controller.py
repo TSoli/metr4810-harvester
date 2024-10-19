@@ -34,11 +34,26 @@ def main(args=None):
     max_speed = max_wheel_rpm * RPM_TO_RAD_S * WHEEL_RADIUS
     look_ahead = 0.2
 
-    ppc = PurePursuitController(look_ahead, 0.4 * max_speed, tol=0.30)
-    y_p = np.linspace(0.4, 1.6, 10)
-    x_p = np.ones_like(y_p) * 0.4
+    ppc = PurePursuitController(look_ahead, 0.4 * max_speed, tol=0.05)
+    y_p = np.concat(
+        (
+            np.linspace(0.4, 1.6, 10),
+            np.ones(10) * 1.6,
+            np.linspace(1.6, 0.4, 10),
+            # np.ones(10) * 0.4,
+        )
+    )
+    x_p = np.concat(
+        (
+            np.ones(10) * 0.4,
+            np.linspace(0.4, 1.6, 10),
+            np.ones(10) * 1.6,
+            # np.linspace(1.6, 0.4, 10),
+        )
+    )
     theta_p = np.zeros_like(y_p)
     path = np.column_stack((x_p, y_p, theta_p))
+
     ppc.path = path
 
     # comms
@@ -48,23 +63,29 @@ def main(args=None):
     ip = data["ip"]
     comms = Comms(ip)
     # put the scoop up
-    comms.send_scoop_request(True)
-    time.sleep(3)
+    # comms.send_scoop_request(True)
 
     while True:
         frame = cap.read()
 
+        start_loc = time.time()
         tf_wr = loc.localise(frame)
+        logger.info(f"Localisation took: {1e3 * (time.time() - start_loc)}ms")
         if tf_wr is None:
             continue
 
+        start_plan = time.time()
         pose = np.array(extract_pose_from_transform(tf_wr))
 
         action = ppc.get_control_action(pose)
         if np.all(action == 0):
             break
 
+        start_comms = time.time()
+        logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
         comms.send_drive_request(action[0], action[1])
+        start_draw = time.time()
+        logger.info(f"Comms took {1e3 * (start_draw - start_comms)}")
 
         tf_cw = loc.tf_cw
         draw_axes(frame, args.square, tf_cw, mtx, dist)
@@ -76,6 +97,9 @@ def main(args=None):
         key = cv2.waitKey(1)
         if key == ord("q"):
             exit(0)
+
+        logger.info(f"Draw took {1e3 * (time.time() - start_draw)}")
+        time.sleep(0.05)
 
     comms.send_drive_request(0, 0)
 

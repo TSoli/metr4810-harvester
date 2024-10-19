@@ -1,6 +1,5 @@
 import argparse
 import queue
-import sys
 import threading
 from collections.abc import Sequence
 
@@ -84,11 +83,11 @@ ROBOT_MARKERS = {
     ),
 }
 
-CORNER_MARKERS = {
+WORLD_TO_CORNERS = {
     0: np.array(
         [
-            [0, -1, 0, -0.215],
-            [1, 0, 0, 0.085],
+            [1, 0, 0, 0],
+            [0, 1, 0, 2.0],
             [0, 0, 1, 0],
             [0, 0, 0, 1],
         ],
@@ -96,8 +95,47 @@ CORNER_MARKERS = {
     ),
     1: np.array(
         [
-            [0, 1, 0, 0.215],
-            [-1, 0, 0, 0.085],
+            [1, 0, 0, 2.0],
+            [0, 1, 0, 2.0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    2: np.array(
+        [
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    3: np.array(
+        [
+            [1, 0, 0, 2.0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+}
+
+CORNER_MARKERS = {
+    0: np.array(
+        [
+            [0, 1, 0, -0.085],
+            [-1, 0, 0, -0.215],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    1: np.array(
+        [
+            [0, -1, 0, 0.085],
+            [1, 0, 0, -0.215],
             [0, 0, 1, 0],
             [0, 0, 0, 1],
         ],
@@ -187,6 +225,7 @@ class Localisation:
         marker_size: float = 0.12,
         dict_type: str = "DICT_4X4_50",
         corner_ids: dict[int, np.ndarray] = CORNER_MARKERS,
+        world_to_corners: dict[int, np.ndarray] = WORLD_TO_CORNERS,
     ) -> None:
         """
         Params:
@@ -211,7 +250,10 @@ class Localisation:
             ],
             dtype=np.float32,
         )
+        self._marker_pos = {}
         self._corner_ids = corner_ids
+        self._world_to_corners = world_to_corners
+        self._frame = None
         self._tf_wr = None
         self._tf_cw = None
 
@@ -260,6 +302,7 @@ class Localisation:
         Returns:
             True if the robot localisation was successful.
         """
+        self._frame = img
         corners, ids, rejected = self._aruco_detector.detectMarkers(img)
         if ids is None:
             return False
@@ -287,72 +330,40 @@ class Localisation:
         res_ids = []
 
         idx = np.isin(ids, list(self._corner_ids.keys()))
-        for id, corner in zip(ids[idx], np.array(corners)[idx]):
-            success, r_vec, t_vec = cv2.solvePnP(
-                self._marker_points,
-                corner,
-                self._mtx,
-                self._dist,
-                flags=cv2.SOLVEPNP_IPPE_SQUARE,
+
+        corners = np.array(corners)
+        corner_points = []
+        for id, corner in zip(ids[idx], corners[idx]):
+            # Add all of the points detected on the robot in the robot frame
+            marker_points_homo = np.column_stack(
+                (self._marker_points, np.ones(self._marker_points.shape[0]))
             )
+            points = (
+                self._world_to_corners[id] @ self._corner_ids[id] @ marker_points_homo.T
+            ).T[:, :-1]
+            corner_points.append(points)
 
-            if not success:
-                continue
-
-            tf = vecs_to_tf(r_vec, t_vec)
-            r_vec, t_vec = tf_to_vecs(tf @ self._corner_ids[id])
-
-            res_t_vecs.append(t_vec)
-            res_ids.append(id)
-
-        if len(res_t_vecs) < 1:
+        if len(corner_points) < 1:
+            logger.warning("No corners detected")
             return False
 
-        t_vecs = np.column_stack(res_t_vecs)
-        # TODO: Magic number is id of tag
-        bottom_left_id = 2
-        if t_vecs.shape[1] < 3 or bottom_left_id not in res_ids:
-            # The bottom left marker was not detected or not enough points
-            # to estimate the pit plane
-            # TODO: ways that do not require the origin
-            # insufficient points to get the plane or origin not in points
+        corner_points = np.vstack(corner_points)
+        success, r_vec, t_vec = cv2.solvePnP(
+            corner_points,
+            np.vstack(corners[idx]),
+            self._mtx,
+            self._dist,
+            flags=cv2.SOLVEPNP_ITERATIVE,
+        )
+
+        if not success:
+            logger.warning("Failed to estimate origin")
             return False
 
-        centroid = np.mean(t_vecs, axis=1, keepdims=True)
-        U, _, _ = np.linalg.svd(t_vecs - centroid)
-        # The last eigenvector will be normal to the best fit plane
-        new_z = U[:, -1]
-        # The normal vector should point towards the camera (the eigenvector may point the other way)
-        if new_z[-1] > 0:
-            new_z *= -1
-
-        #
-        idx = res_ids.index(bottom_left_id)
-        # translation from camera to world origin
-        t = t_vecs[:, idx]
-
-        top_left_id = 0
-        bottom_right_id = 3
-
-        if bottom_right_id in res_ids:
-            # Choose the x axis in the direction from the bottom left marker to the
-            # bottom right
-            idx = res_ids.index(bottom_right_id)
-            new_x = (t_vecs[:, idx] - t).T
-            new_x /= np.linalg.norm(new_x)
-            # y axis is perp to both x and z
-            new_y = np.cross(new_z, new_x)
-        else:
-            # same as above but choose y direction
-            idx = res_ids.index(top_left_id)
-            new_y = (t_vecs[:, idx] - t).T
-            new_y /= np.linalg.norm(new_y)
-            new_x = np.cross(new_y, new_z)
-
-        R = np.column_stack((new_x.T, new_y.T, new_z.T))
         tf_cw = np.eye(4)
+        R, _ = cv2.Rodrigues(r_vec)
         tf_cw[:3, :3] = R
-        tf_cw[:3, 3] = t.T
+        tf_cw[:3, 3] = t_vec.T
         self._tf_cw = tf_cw
         return True
 
@@ -412,6 +423,15 @@ class Localisation:
 
         tf_wc = np.linalg.inv(self._tf_cw)
         self._tf_wr = tf_wc @ tf_cr
+
+        # for id in ids[idx]:
+        #     draw_axes(
+        #         self._frame,
+        #         0.15,
+        #         tf_cr @ self._robot_markers[id],
+        #         self._mtx,
+        #         self._dist,
+        #     )
         return True
 
 
@@ -512,7 +532,7 @@ def main(args=None):
         if key == ord("q"):
             exit(0)
 
-        # print(loc.tf_wr)
+        print(loc.tf_wr)
 
 
 if __name__ == "__main__":

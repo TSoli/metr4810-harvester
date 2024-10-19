@@ -143,6 +143,9 @@ class HeadingController:
         Params:
             heading: The current heading of the robot.
             goal: The goal heading.
+
+        Returns:
+            angular velocity of robot (rad/s).
         """
         error = goal - heading
         if self._last_time is not None:
