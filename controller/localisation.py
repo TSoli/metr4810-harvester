@@ -1,12 +1,17 @@
 import argparse
 import queue
+import sys
+import threading
+import queue
 import threading
 from collections.abc import Sequence
 
 import cv2
 import numpy as np
 import numpy.typing as npt
+import numpy.typing as npt
 import yaml
+from logger import logger
 from logger import logger
 
 DEFAULT_SIZE = "DICT_4X4_50"
@@ -16,6 +21,7 @@ ROBOT_MARKERS = {
         [
             [1, 0, 0, 0],
             [0, 1, 0, -0.055],
+            [0, 0, 1, 0.364],
             [0, 0, 1, 0.364],
             [0, 0, 0, 1],
         ],
@@ -27,6 +33,7 @@ ROBOT_MARKERS = {
             [-1, 0, 0, 0],
             [0, 0, 1, 0.038],
             [0, 1, 0, 0.317],
+            [0, 1, 0, 0.317],
             [0, 0, 0, 1],
         ],
         dtype=float,
@@ -37,15 +44,18 @@ ROBOT_MARKERS = {
             [1, 0, 0, 0],
             [0, 0, -1, -0.148],
             [0, 1, 0, 0.272],
+            [0, 1, 0, 0.272],
             [0, 0, 0, 1],
         ],
         dtype=float,
     ),
     # LEFT TOP
     5: np.array(
+    5: np.array(
         [
             [0, 0, -1, -0.103],
             [-1, 0, 0, -0.055],
+            [0, 1, 0, 0.282],
             [0, 1, 0, 0.282],
             [0, 0, 0, 1],
         ],
@@ -53,9 +63,11 @@ ROBOT_MARKERS = {
     ),
     # LEFT BOTTOM
     8: np.array(
+    8: np.array(
         [
             [0, 0, -1, -0.103],
             [-1, 0, 0, -0.055],
+            [0, 1, 0, 0.112],
             [0, 1, 0, 0.112],
             [0, 0, 0, 1],
         ],
@@ -63,9 +75,11 @@ ROBOT_MARKERS = {
     ),
     # RIGHT TOP
     7: np.array(
+    7: np.array(
         [
             [0, 0, 1, 0.103],
             [1, 0, 0, -0.055],
+            [0, 1, 0, 0.282],
             [0, 1, 0, 0.282],
             [0, 0, 0, 1],
         ],
@@ -73,9 +87,50 @@ ROBOT_MARKERS = {
     ),
     # RIGHT BOTTOM
     9: np.array(
+    9: np.array(
         [
             [0, 0, 1, 0.103],
             [1, 0, 0, -0.055],
+            [0, 1, 0, 0.112],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+}
+
+CORNER_MARKERS = {
+    0: np.array(
+        [
+            [0, -1, 0, -0.215],
+            [1, 0, 0, 0.085],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    1: np.array(
+        [
+            [0, 1, 0, 0.215],
+            [-1, 0, 0, 0.085],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    2: np.array(
+        [
+            [-1, 0, 0, -0.085],
+            [0, -1, 0, -0.175],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ],
+        dtype=float,
+    ),
+    3: np.array(
+        [
+            [-1, 0, 0, 0.085],
+            [0, -1, 0, -0.175],
+            [0, 0, 1, 0],
             [0, 1, 0, 0.112],
             [0, 0, 0, 1],
         ],
@@ -194,6 +249,38 @@ class BufferlessVideoCapture:
         return self.q.get()
 
 
+# bufferless VideoCapture
+class BufferlessVideoCapture:
+    def __init__(self, name):
+        self.cap = cv2.VideoCapture(name)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+        self.cap.set(cv2.CAP_PROP_FPS, 60)
+        if not self.cap.isOpened():
+            logger.critical("Could not open camera")
+            exit(1)
+        self.q = queue.Queue()
+        t = threading.Thread(target=self._reader)
+        t.daemon = True
+        t.start()
+
+    # read frames as soon as they are available, keeping only most recent one
+    def _reader(self):
+        while True:
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+            if not self.q.empty():
+                try:
+                    self.q.get_nowait()  # discard previous (unprocessed) frame
+                except queue.Empty:
+                    pass
+            self.q.put(frame)
+
+    def read(self):
+        return self.q.get()
+
+
 class Localisation:
     """Localises the Robot given camera frames"""
 
@@ -224,6 +311,7 @@ class Localisation:
         robot_markers: dict[int, np.ndarray],
         marker_size: float = 0.12,
         dict_type: str = "DICT_4X4_50",
+        corner_ids: dict[int, np.ndarray] = CORNER_MARKERS,
         corner_ids: dict[int, np.ndarray] = CORNER_MARKERS,
         world_to_corners: dict[int, np.ndarray] = WORLD_TO_CORNERS,
     ) -> None:
@@ -333,6 +421,8 @@ class Localisation:
         res_ids = []
 
         idx = np.isin(ids, list(self._corner_ids.keys()))
+        for id, corner in zip(ids[idx], np.array(corners)[idx]):
+        idx = np.isin(ids, list(self._corner_ids.keys()))
 
         corners = np.array(corners)
         corner_points = []
@@ -371,6 +461,26 @@ class Localisation:
                 flags=cv2.SOLVEPNP_ITERATIVE,
             )
 
+            if not success:
+                continue
+
+            tf = vecs_to_tf(r_vec, t_vec)
+            r_vec, t_vec = tf_to_vecs(tf @ self._corner_ids[id])
+
+            res_t_vecs.append(t_vec)
+            res_ids.append(id)
+
+        if len(res_t_vecs) < 1:
+            return False
+
+        t_vecs = np.column_stack(res_t_vecs)
+        # TODO: Magic number is id of tag
+        bottom_left_id = 2
+        if t_vecs.shape[1] < 3 or bottom_left_id not in res_ids:
+            # The bottom left marker was not detected or not enough points
+            # to estimate the pit plane
+            # TODO: ways that do not require the origin
+            # insufficient points to get the plane or origin not in points
         self._prev_rvec = r_vec
         self._prev_tvec = t_vec
 
@@ -378,6 +488,38 @@ class Localisation:
             logger.warning("Failed to estimate origin")
             return False
 
+        centroid = np.mean(t_vecs, axis=1, keepdims=True)
+        U, _, _ = np.linalg.svd(t_vecs - centroid)
+        # The last eigenvector will be normal to the best fit plane
+        new_z = U[:, -1]
+        # The normal vector should point towards the camera (the eigenvector may point the other way)
+        if new_z[-1] > 0:
+            new_z *= -1
+
+        #
+        idx = res_ids.index(bottom_left_id)
+        # translation from camera to world origin
+        t = t_vecs[:, idx]
+
+        top_left_id = 0
+        bottom_right_id = 3
+
+        if bottom_right_id in res_ids:
+            # Choose the x axis in the direction from the bottom left marker to the
+            # bottom right
+            idx = res_ids.index(bottom_right_id)
+            new_x = (t_vecs[:, idx] - t).T
+            new_x /= np.linalg.norm(new_x)
+            # y axis is perp to both x and z
+            new_y = np.cross(new_z, new_x)
+        else:
+            # same as above but choose y direction
+            idx = res_ids.index(top_left_id)
+            new_y = (t_vecs[:, idx] - t).T
+            new_y /= np.linalg.norm(new_y)
+            new_x = np.cross(new_y, new_z)
+
+        R = np.column_stack((new_x.T, new_y.T, new_z.T))
         tf_cw = np.eye(4)
         R, _ = cv2.Rodrigues(r_vec)
         tf_cw[:3, :3] = R
@@ -485,6 +627,29 @@ def extract_pose_from_transform(tf: npt.NDArray) -> tuple[float, float, float]:
     return x, y, theta
 
 
+def extract_pose_from_transform(tf: npt.NDArray) -> tuple[float, float, float]:
+    """
+    Extracts x, y, and heading (rotation around z-axis) from a 3D transformation matrix.
+
+    Params:
+        tf: The Homogeneous Transformation matrix.
+
+    Returns:
+        x: Translation in x-direction (m)
+        y: Translation in y-direction (m)
+        theta: Rotation about the z-axis (rad)
+    """
+
+    # Extract x and y translations
+    x = tf[0, 3]
+    y = tf[1, 3]
+
+    # Extract heading (rotation about z-axis)
+    theta = np.arctan2(tf[1, 0], tf[0, 0])
+
+    return x, y, theta
+
+
 def get_cam_params(file: str) -> tuple[np.ndarray, np.ndarray]:
     """Return mtx, dist camera parameters from yaml file"""
     with open(file, "r") as f:
@@ -529,10 +694,27 @@ def tf_to_vecs(tf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return rvec, tvec
 
 
+def vecs_to_tf(rvec: np.ndarray, tvec: np.ndarray) -> np.ndarray:
+    """Transform rvecs and tvecs to transformation matrix"""
+    tf = np.eye(4)
+    R, _ = cv2.Rodrigues(rvec)
+    tf[:3, :3] = R
+    tf[:3, 3] = tvec.T
+    return tf
+
+
+def tf_to_vecs(tf: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Get rvecs and tvecs from transformation matrix"""
+    rvec = cv2.Rodrigues(tf[:3, :3])
+    tvec = tf[:3, 3].T
+    return rvec, tvec
+
+
 def main(args=None):
     # Example Usage
     dev = args.device
 
+    cap = BufferlessVideoCapture(dev)
     cap = BufferlessVideoCapture(dev)
 
     mtx, dist = get_cam_params(args.cam_params)
@@ -543,6 +725,7 @@ def main(args=None):
     )
 
     while True:
+        frame = cap.read()
         frame = cap.read()
 
         loc.add_img(frame)
