@@ -63,13 +63,18 @@ START_KEY = "s"
 # DIGGING FLAG
 digging_flag = False
 
+# GLOBAL KEYPRESS FLAGS
+high_ground_request = False
+return_to_delivery_point_request = False
+dispense_beans_request = False
+start_deployment_request = False
 
 def main(args=None):
     # GLOBAL KEYPRESS FLAGS
-    high_ground_request = False
-    return_to_delivery_point_request = False
-    dispense_beans_request = False
-    start_deployment_request = False
+    global high_ground_request
+    global return_to_delivery_point_request
+    global dispense_beans_request
+    global start_deployment_request
     # Get Camera
     dev = args.device
     cap = BufferlessVideoCapture(dev)
@@ -121,7 +126,7 @@ def main(args=None):
 
     # Construct the main controller
     mc = MainController(zig_zag_path, comms, pf)
-    mc.set_mode(CONTINUE)
+    # mc.set_mode(CONTINUE)
 
     # Flag for digging
     global digging_flag
@@ -460,7 +465,7 @@ def on_release(key):
         return False
 
 def on_press(key):
-    global stop_request_made, high_ground_request, start_deployment_request
+    global high_ground_request, start_deployment_request
     global return_to_delivery_point_request, dispense_beans_request
 
     try:
