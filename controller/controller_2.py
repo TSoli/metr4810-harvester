@@ -20,17 +20,17 @@ WHEEL_RADIUS = 0.0396  # radius of wheel in m
 RPM_TO_RAD_S = 2 * math.pi / 60
 
 # CONSTANTS FOR THE PATH
-COVERABLE_AREA_WIDTH = 1.600
-COVERABLE_AREA_HEIGHT = 1.600
+COVERABLE_AREA_WIDTH = 1.000
+COVERABLE_AREA_HEIGHT = 1.000
 WAYPOINT_SPACING = 0.05
-START_X = 0.200
-START_Y = 0.200
+START_X = 0.500
+START_Y = 0.500
 SCOOP_WIDTH = 0.180
 OVERLAP_PERCENTAGE = 20
 
 # CONSTANTS FOR PI CONTROLLER
-KP = 1
-KI = 0.4
+KP = 2
+KI = 0.6
 
 # MODE ENUM
 WAITING_SIGNAL = 0
@@ -68,6 +68,7 @@ return_to_delivery_point_request = False
 dispense_beans_request = False
 start_deployment_request = False
 
+
 def main(args=None):
     # GLOBAL KEYPRESS FLAGS
     global high_ground_request
@@ -98,7 +99,7 @@ def main(args=None):
     comms = Comms(ip)
 
     # Genearte the overall path
-    ppc = PurePursuitController(look_ahead, 0.4 * MAX_SPEED, tol=0.025)
+    ppc = PurePursuitController(look_ahead, 0.5 * MAX_SPEED, tol=0.025)
 
     # Generate heading controller
     hc = HeadingController(KP, KI)
@@ -200,14 +201,19 @@ def main(args=None):
                     mc.set_mode(CONTINUE)
                 continue
 
-        # if digging_flag == True:
-        #     # Send the scoop request
-        #     if (time.time - prev_time) > 3.0:
-        #         comms.send_scoop_request(True)
-        #         time.sleep(1.0)
-        #         comms.send_scoop_request(False)
-        #         prev_time = time.time()
-        #         continue
+        if digging_flag == True:
+            # Send the scoop request
+            if (time.time() - prev_time) > 3.0:
+                time.sleep(0.05)
+                comms.send_drive_request(0.0, 0.0)
+                time.sleep(0.05)
+                comms.send_scoop_request(True)
+                time.sleep(3.0)
+                comms.send_scoop_request(False)
+                time.sleep(3.0)
+
+                prev_time = time.time()
+                continue
 
         # Log the timining of the plan
         start_comms = time.time()
@@ -261,7 +267,8 @@ class PathFollower:
                 return (0, action_turn)
 
             digging_flag = True
-            # self._comms.send_scoop_request(False)
+            time.sleep(0.05)
+            self._comms.send_scoop_request(False)
 
             self._hc.reset()
             self._initial_turn = False
@@ -311,7 +318,8 @@ class MainController:
                     self._path_segment_idx += 1
 
                 # Lower Scoop
-                # self._comms.send_scoop_request(False)
+                time.sleep(0.05)
+                self._comms.send_scoop_request(False)
 
                 # Set the path for the controller
                 current_segment = self._overall_path[self._path_segment_idx - 1]
@@ -329,7 +337,8 @@ class MainController:
             # Store the current pose
             self.set_stored_pose()
             self.set_has_been_moved()
-            # self._comms.send_scoop_request(True)
+            time.sleep(0.01)
+            self._comms.send_scoop_request(True)
             digging_flag = False
 
             # Generate path to go to high ground, will be wrapped with desired location
@@ -339,7 +348,8 @@ class MainController:
             # Store the current pose
             self.set_stored_pose()
             self.set_has_been_moved()
-            # self._comms.send_scoop_request(True)
+            time.sleep(0.05)
+            self._comms.send_scoop_request(True)
             digging_flag = False
 
             path = generate_straight_line(
@@ -358,7 +368,8 @@ class MainController:
 
         if mode == RETURN_TO_POSITION:
             digging_flag = False
-            # self._comms.send_scoop_request(True)
+            time.sleep(0.05)
+            self._comms.send_scoop_request(True)
 
             path = generate_straight_line(
                 self.get_current_pose(), self.get_stored_pose(), WAYPOINT_SPACING
