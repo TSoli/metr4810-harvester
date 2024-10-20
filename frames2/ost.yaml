@@ -1,4 +1,14 @@
-{camera_matrix: {cols: 3, data: [[1630.6843646091675, 0.0, 947.7390110194654], [0.0,
-        1627.7987702915887, 519.2842672368622], [0.0, 0.0, 1.0]], rows: 3}, distortion_coefficients: {
-    cols: 1, data: [[0.24883421921772128, -1.4734436664451296, -0.003874384456464118,
-        -0.00046914550743042046, 2.7734903823876693]], rows: 1}}
+image_width: 1920
+image_height: 1080
+camera_name: narrow_stereo
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [1630.6843,    0.     ,  947.739 ,
+            0.     , 1627.79877,  519.284267,
+            0.     ,    0.     ,    1.     ]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.2488, -1.47344367, -0.003874, 0.00046914, 2.77349038]
