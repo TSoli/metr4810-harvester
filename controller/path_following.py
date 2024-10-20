@@ -148,6 +148,13 @@ class HeadingController:
             angular velocity of robot (rad/s).
         """
         error = goal - heading
+        if abs(error) > np.pi:
+            err_sgn = np.sign(error)
+            error = -err_sgn * ((2 * np.pi) - abs(error))
+
+        if abs(error) < self._tol:
+            return 0
+
         if self._last_time is not None:
             dt = time.time() - self._last_time
             self._integral += dt * error
