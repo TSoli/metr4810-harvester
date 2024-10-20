@@ -68,34 +68,28 @@ def main(args=None):
     while True:
         frame = cap.read()
 
-        # Localise the initial points
         start_loc = time.time()
         tf_wr = loc.localise(frame)
         logger.info(f"Localisation took: {1e3 * (time.time() - start_loc)}ms")
         if tf_wr is None:
             continue
-        
-        # Extract the pose
+
         start_plan = time.time()
         pose = np.array(extract_pose_from_transform(tf_wr))
 
-        # Get the control action and check to see if you are at the end of the path
         action = ppc.get_control_action(pose)
         if np.all(action == 0):
             break
 
-        # Log the timining of the plan
         start_comms = time.time()
         logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
         comms.send_drive_request(action[0], action[1])
         start_draw = time.time()
         logger.info(f"Comms took {1e3 * (start_draw - start_comms)}")
 
-        # Draw axis for the corners
         tf_cw = loc.tf_cw
         draw_axes(frame, args.square, tf_cw, mtx, dist)
 
-        # Draw the axis for the robot
         tf_cr = tf_cw @ tf_wr
         draw_axes(frame, args.square, tf_cr, mtx, dist)
 
