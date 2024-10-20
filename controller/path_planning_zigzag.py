@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from utils.path_planning_visualiser import visualize_segments 
+from utils.path_planning_visualiser import visualize_segments, visualize_segments_zig_zag
 
 
 class PathPlannerZigZag:
@@ -88,4 +88,4 @@ class PathPlannerZigZag:
     
 zigzag_path = PathPlannerZigZag(1900, 1900, 100, 50, 50, 200, 0)
 segmented_path = zigzag_path.generate_zigzag_path()
-visualize_segments(segmented_path)
+visualize_segments_zig_zag(segmented_path)
