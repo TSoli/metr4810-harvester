@@ -44,6 +44,14 @@ RETURN_TO_POSITION = 6
 MAX_WHEEL_RPM = 100
 MAX_SPEED = MAX_WHEEL_RPM * RPM_TO_RAD_S * WHEEL_RADIUS
 
+#PIT CONSTANTS
+PIT_MIN_X = 0
+PIT_MAX_X = 2
+PIT_MIN_Y = 0
+PIT_MAX_Y = 2
+
+OFFSET_TO_WALL = 0.2
+
 # DIGGING FLAG
 digging_flag = False
 
@@ -148,8 +156,8 @@ def main(args=None):
             digging_flag = False
             mc.set_mode(DISPENSE_BEANS)
 
-        if (time.time() - prev_time) > 15.0 and temp_flag == False:
-            mc.set_mode(RETURN_TO_DEPOSIT_FAR)
+        if (time.time() - prev_time) > 23.0 and temp_flag == False:
+            mc.set_mode(GO_TO_HIGH_GROUND)
             temp_flag = True
 
         action = np.array([0.0, 0.0])
@@ -309,7 +317,7 @@ class MainController:
             digging_flag = False
 
             # Generate path to go to high ground, will be wrapped with desired location
-            # CAM FUNCTION
+            path = sand_snake_path(self.get_current_pose())
             self._path_follower.set_path(path)
         elif mode == RETURN_TO_DEPOSIT_FAR:
             # Store the current pose
@@ -381,15 +389,50 @@ def generate_straight_line(start, stop, spacing=0.05):
     # Generate the x and y points
     x_points = np.linspace(start[0], stop[0], num_lines)
     y_points = np.linspace(start[1], stop[1], num_lines)
-    heading = math.atan2((stop[1] - start[1]), (stop[0] - start[0]))
-
-    # Adjust to be within the correct range
-    heading -= math.pi / 2
+    
+    heading = 0
+    if stop[0] == start[0]:
+        if start[1] > stop[1]:
+            heading = math.radians(180)
+        else:
+            heading = 0
+    else:
+        heading = math.atan2((stop[1] - start[1]), (stop[0] - start[0]))
+        
+        # Adjust to be within the correct range
+        heading -= math.pi / 2    
 
     # Combine the points so that it is (x, y, heading)
     points = np.column_stack((x_points, y_points, np.ones(num_lines) * heading))
 
     return points
+
+def sand_snake_path(pose):
+    """
+    Gives the path that the robot should take if the sand snake signal is given. Goes to the closest wall.
+
+    Params:
+        pose: The current pose of the robot. (x,y,pi)
+
+    Returns:
+        
+    """
+    x_from_centre = abs(pose[0] - 1)
+    y_from_centre = abs(pose[1] - 1)
+
+    start_point = pose
+    end_point = None
+    if (x_from_centre > y_from_centre):
+        if (pose[0] > 1):
+            end_point = (PIT_MAX_X - OFFSET_TO_WALL, pose[1], math.pi / 2)
+        else:
+            end_point = (OFFSET_TO_WALL, pose[1], - math.pi / 2)
+    else:
+        if (pose[1] > 1):
+            end_point = (pose[0], PIT_MAX_Y - OFFSET_TO_WALL, 0)
+        else:
+            end_point = (pose[0], OFFSET_TO_WALL, math.pi)
+    return generate_straight_line(start_point, end_point)
 
 
 if __name__ == "__main__":
@@ -399,3 +442,5 @@ if __name__ == "__main__":
     parser.add_argument("--size", default=DEFAULT_SIZE)
     parser.add_argument("--square", type=float, default=0.12)
     main(parser.parse_args())
+
+
