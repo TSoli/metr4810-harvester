@@ -125,8 +125,8 @@ WORLD_TO_CORNERS = {
 CORNER_MARKERS = {
     0: np.array(
         [
-            [0, 1, 0, -0.085],
-            [-1, 0, 0, -0.215],
+            [0, -1, 0, -0.085],
+            [1, 0, 0, -0.215],
             [0, 0, 1, 0],
             [0, 0, 0, 1],
         ],
@@ -134,8 +134,8 @@ CORNER_MARKERS = {
     ),
     1: np.array(
         [
-            [0, -1, 0, 0.085],
-            [1, 0, 0, -0.215],
+            [0, 1, 0, 0.085],
+            [-1, 0, 0, -0.215],
             [0, 0, 1, 0],
             [0, 0, 0, 1],
         ],
@@ -256,11 +256,14 @@ class Localisation:
         self._frame = None
         self._tf_wr = None
         self._tf_cw = None
+        self._prev_rvec = None
+        self._prev_tvec = None
 
         aruco_dict = cv2.aruco.getPredefinedDictionary(
             Localisation.ARUCO_DICT[dict_type]
         )
         aruco_params = cv2.aruco.DetectorParameters()
+        aruco_params.minMarkerPerimeterRate = 8 / (4 * 1e3 * marker_size)
         self._aruco_detector = cv2.aruco.ArucoDetector(aruco_dict, aruco_params)
 
     @property
@@ -348,13 +351,28 @@ class Localisation:
             return False
 
         corner_points = np.vstack(corner_points)
-        success, r_vec, t_vec = cv2.solvePnP(
-            corner_points,
-            np.vstack(corners[idx]),
-            self._mtx,
-            self._dist,
-            flags=cv2.SOLVEPNP_ITERATIVE,
-        )
+        if self._prev_rvec is not None and self._prev_tvec is not None:
+            success, r_vec, t_vec = cv2.solvePnP(
+                corner_points,
+                np.vstack(corners[idx]),
+                self._mtx,
+                self._dist,
+                rvec=self._prev_rvec,
+                tvec=self._prev_tvec,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+                useExtrinsicGuess=True,
+            )
+        else:
+            success, r_vec, t_vec = cv2.solvePnP(
+                corner_points,
+                np.vstack(corners[idx]),
+                self._mtx,
+                self._dist,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
+
+        self._prev_rvec = r_vec
+        self._prev_tvec = t_vec
 
         if not success:
             logger.warning("Failed to estimate origin")
@@ -365,6 +383,15 @@ class Localisation:
         tf_cw[:3, :3] = R
         tf_cw[:3, 3] = t_vec.T
         self._tf_cw = tf_cw
+
+        for id in ids[idx]:
+            draw_axes(
+                self._frame,
+                0.15,
+                tf_cw @ self._world_to_corners[id] @ self._corner_ids[id],
+                self._mtx,
+                self._dist,
+            )
         return True
 
     def _update_tf_wr(
@@ -424,14 +451,14 @@ class Localisation:
         tf_wc = np.linalg.inv(self._tf_cw)
         self._tf_wr = tf_wc @ tf_cr
 
-        # for id in ids[idx]:
-        #     draw_axes(
-        #         self._frame,
-        #         0.15,
-        #         tf_cr @ self._robot_markers[id],
-        #         self._mtx,
-        #         self._dist,
-        #     )
+        for id in ids[idx]:
+            draw_axes(
+                self._frame,
+                0.15,
+                tf_cr @ self._robot_markers[id],
+                self._mtx,
+                self._dist,
+            )
         return True
 
 
