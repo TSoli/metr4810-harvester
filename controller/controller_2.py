@@ -12,9 +12,8 @@ from localisation import (ROBOT_MARKERS, BufferlessVideoCapture, Localisation,
 from logger import logger
 from path_following import HeadingController, PurePursuitController
 from path_planning_zigzag import PathPlannerZigZag
-from utils.path_planning_visualiser import visualize_segments_zig_zag
-
 from pynput import keyboard
+from utils.path_planning_visualiser import visualize_segments_zig_zag
 
 DEFAULT_SIZE = "DICT_4X4_50"
 WHEEL_RADIUS = 0.0396  # radius of wheel in m
@@ -88,9 +87,7 @@ def main(args=None):
     look_ahead = 0.2
 
     # Start listener thread
-    listener = keyboard.Listener(
-        on_press=on_press,
-        on_release=on_release)
+    listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
 
     # Comms
@@ -175,9 +172,9 @@ def main(args=None):
             digging_flag = False
             mc.set_mode(DISPENSE_BEANS)
 
-        if (time.time() - prev_time) > 30.0 and temp_flag == False:
-            mc.set_mode(GO_TO_HIGH_GROUND)
-            temp_flag = True
+        # if (time.time() - prev_time) > 30.0 and temp_flag == False:
+        # mc.set_mode(GO_TO_HIGH_GROUND)
+        # temp_flag = True
 
         action = np.array([0.0, 0.0])
         # Get the actions for the controller paths that are valuable
@@ -459,10 +456,12 @@ def sand_snake_path(pose):
             end_point = (pose[0], OFFSET_TO_WALL, math.pi)
     return generate_straight_line(start_point, end_point)
 
+
 def on_release(key):
     if key == keyboard.Key.esc:
         # Stop listener
         return False
+
 
 def on_press(key):
     global high_ground_request, start_deployment_request
@@ -482,7 +481,8 @@ def on_press(key):
 
     except Exception as e:
         print("error:", e)
-        #print(f'Special key {key} pressed')
+        # print(f'Special key {key} pressed')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
