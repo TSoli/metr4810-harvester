@@ -40,6 +40,10 @@ RETURN_TO_DEPOSIT_FAR = 4
 RETURN_TO_DEPOSIT_NEAR = 5
 RETURN_TO_POSITION = 6
 
+# Set controller defaults
+MAX_WHEEL_RPM = 100
+MAX_SPEED = MAX_WHEEL_RPM * RPM_TO_RAD_S * WHEEL_RADIUS
+
 # DIGGING FLAG
 digging_flag = False
 
@@ -60,9 +64,6 @@ def main(args=None):
         mtx, dist, ROBOT_MARKERS, marker_size=args.square, dict_type=args.size
     )
 
-    # Set controller defaults
-    max_wheel_rpm = 100
-    max_speed = max_wheel_rpm * RPM_TO_RAD_S * WHEEL_RADIUS
     look_ahead = 0.2
 
     # Comms
@@ -73,7 +74,7 @@ def main(args=None):
     comms = Comms(ip)
 
     # Genearte the overall path
-    ppc = PurePursuitController(look_ahead, 0.4 * max_speed, tol=0.025)
+    ppc = PurePursuitController(look_ahead, 0.4 * MAX_SPEED, tol=0.025)
 
     # Generate heading controller
     hc = HeadingController(KP, KI)
@@ -209,7 +210,7 @@ def main(args=None):
 
 
 class PathFollower:
-    def __init__(self, ppc, hc, comms: Comms):
+    def __init__(self, ppc: PurePursuitController, hc: HeadingController, comms: Comms):
         self._path = None
         self._ppc = ppc
         self._hc = hc
@@ -265,6 +266,7 @@ class MainController:
     def set_mode(self, mode):
         # Set path based on the current action
         global digging_flag
+        self._path_follower._ppc.avg_speed = 0.4 * MAX_SPEED
         if mode == CONTINUE:
             # Go to start of segment logic
             if self._has_been_moved:
@@ -326,6 +328,7 @@ class MainController:
                 self.get_current_pose(), (0.1, 0.1), WAYPOINT_SPACING
             )
             digging_flag = False
+            self._path_follower._ppc.avg_speed *= 0.5
             self._path_follower.set_path(path)
             pass
 
