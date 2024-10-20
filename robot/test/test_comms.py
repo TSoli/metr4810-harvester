@@ -1,4 +1,3 @@
-import _thread
 from queue import Queue
 
 from comms import Comms

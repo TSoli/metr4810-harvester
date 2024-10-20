@@ -23,6 +23,7 @@ class Comms:
         self._ip = "0.0.0.0"
         self._port = port
         self._socket = None
+        self._wlan = None
 
     def connect(self) -> None:
         """
@@ -38,10 +39,11 @@ class Comms:
 
         ssid = data["ssid"]
         password = data["password"]
-        self._ip = data["ip"]
-        ip_info = wlan.ifconfig()
-        ip_config = (self._ip, ip_info[1], ip_info[2], ip_info[3])
-        wlan.ifconfig(ip_config)
+        # self._ip = data["ip"]
+        # ip_info = wlan.ifconfig()
+        # ip_config = (self._ip, ip_info[1], ip_info[2], ip_info[3])
+        # wlan.ifconfig(ip_config)
+        self._wlan = wlan
         logger.info("Connecting to wifi...")
         while True:
             try:
