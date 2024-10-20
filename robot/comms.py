@@ -61,7 +61,6 @@ class Comms:
         """Start accepting messages"""
         self._open_socket()
 
-        # TODO: Handle sending logs?
         while True:
             if not self._wlan.isconnected():
                 self.connect()

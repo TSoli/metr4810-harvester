@@ -49,6 +49,14 @@ class PurePursuitController:
         look_ahead_point = self._find_goal_point(idx)
         return self._find_control_action(pose, look_ahead_point)
 
+    @property
+    def avg_speed(self) -> float:
+        return self._avg_speed
+
+    @avg_speed.setter
+    def avg_speed(self, speed: float) -> None:
+        self._avg_speed = speed
+
     def _find_closest_point(self, pose: NDArray[np.float64]) -> tuple[np.float64, int]:
         """
         Find the closest point on the path to the robot.
