@@ -1,6 +1,7 @@
 import time
 
 import numpy as np
+from logger import logger
 from numpy.typing import NDArray
 
 
@@ -81,6 +82,7 @@ class PurePursuitController:
                 break
             goal_point = pt
 
+        logger.info(f"Goal point: {goal_point}")
         return goal_point
 
     def _find_control_action(
@@ -107,8 +109,12 @@ class PurePursuitController:
         tf_bw = np.linalg.inv(tf_wb)
         goal_point_b = tf_bw @ np.array([goal_point[0], goal_point[1], 1])
         curvature = -2 * goal_point_b[0] / np.linalg.norm(goal_point_b[:2]) ** 2
-        # TODO: Slow down when close?
+        distance = np.linalg.norm(goal_point_b[:2])
         velocity = self._avg_speed
+
+        if distance < 3 * self._tol:
+            # TODO: Slow down when close?
+            velocity *= 0.4
 
         if goal_point_b[1] < 0:
             velocity *= -1
