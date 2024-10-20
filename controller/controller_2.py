@@ -155,8 +155,9 @@ def main(args=None):
             # Send the scoop request
             if (time.time - prev_time) > 3.0:
                 comms.send_scoop_request(True)
-                
+                time.sleep(1.0)
                 comms.send_scoop_request(False)
+                prev_time = time.time()
                 continue
         
 
