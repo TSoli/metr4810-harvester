@@ -201,3 +201,38 @@ if __name__ == "__main__":
     parser.add_argument("--size", default=DEFAULT_SIZE)
     parser.add_argument("--square", type=float, default=0.12)
     main(parser.parse_args())
+
+def sand_snake_path(pose):
+    """
+    Gives the path that the robot should take if the sand snake signal is given. Goes to the closest wall.
+
+    Params:
+        pose: The current pose of the robot. (x,y,pi)
+
+    Returns:
+        
+    """
+    x_from_centre = abs(pose.x - 1)
+    y_from_centre = abs(pose.y - 1)
+
+    start_point = pose
+    end_point = None
+    if (x_from_centre > y_from_centre):
+        if (pose.x > 1):
+            end_point = (1.95, pose.y, math.pi() / 2)
+        else:
+            end_point = (0.05, pose.y, 3 * math.pi() / 2)
+    else:
+        if (pose.y > 1):
+            end_point = (pose.x, 1.95, 0)
+        else:
+            end_point = (pose.x, 0.05, math.pi())
+    return generate_straight_line(start_point, end_point)
+    
+def generate_straight_line(start, stop, spacing = 0.05):
+    num_lines = round(math.sqrt(abs(stop[0] - start[0]) ** 2 + abs(stop[1] - start[1]) ** 2) / spacing)
+    x_points = np.linspace(start[0], stop[0], num_lines)
+    y_points = np.linspace(start[1], stop[1], num_lines)
+    heading = math.tan((stop[1] - stop[1])/(start[0] - stop[0]))
+
+    return points
