@@ -14,6 +14,8 @@ from path_following import HeadingController, PurePursuitController
 from path_planning_zigzag import PathPlannerZigZag
 from utils.path_planning_visualiser import visualize_segments_zig_zag
 
+from pynput import keyboard
+
 DEFAULT_SIZE = "DICT_4X4_50"
 WHEEL_RADIUS = 0.0396  # radius of wheel in m
 RPM_TO_RAD_S = 2 * math.pi / 60
@@ -52,6 +54,12 @@ PIT_MAX_Y = 2
 
 OFFSET_TO_WALL = 0.2
 
+# KEYBOARD HANDLER CONSTANTS
+HIGH_GROUND_KEY = "h"
+DELIVERY_REQUEST_KEY = "d"
+DISPENSE_BEANS = "b"
+START_KEY = "s"
+
 # DIGGING FLAG
 digging_flag = False
 
@@ -73,6 +81,12 @@ def main(args=None):
     )
 
     look_ahead = 0.2
+
+    # Start listener thread
+    listener = keyboard.Listener(
+        on_press=on_press,
+        on_release=on_release)
+    listener.start()
 
     # Comms
     with open("comms_config.json") as f:
@@ -439,6 +453,30 @@ def sand_snake_path(pose):
             end_point = (pose[0], OFFSET_TO_WALL, math.pi)
     return generate_straight_line(start_point, end_point)
 
+def on_release(key):
+    if key == keyboard.Key.esc:
+        # Stop listener
+        return False
+
+def on_press(key):
+    global stop_request_made, high_ground_request, start_deployment_request
+    global return_to_delivery_point_request, dispense_beans_request
+
+    try:
+        if key.char == HIGH_GROUND_KEY:
+            high_ground_request = True
+        elif key.char == START_KEY:
+            start_deployment_request = True
+        elif key.char == DELIVERY_REQUEST_KEY:
+            return_to_delivery_point_request = True
+        elif key.char == DISPENSE_BEANS:
+            dispense_beans_request = True
+        else:
+            print("unknown key")
+
+    except Exception as e:
+        print("error:", e)
+        #print(f'Special key {key} pressed')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
