@@ -93,6 +93,10 @@ def main(args=None):
     # Construct the main controller
     mc = MainController(zig_zag_path, comms, pf)
 
+    # Flag for digging
+    digging_flag = False
+    prev_time = time.time()
+
     while True:
         # Localise the robot
         frame = cap.read()
@@ -147,6 +151,15 @@ def main(args=None):
                     mc.set_mode(CONTINUE)
                 continue
         
+        if digging_flag == True:
+            # Send the scoop request
+            if (time.time - prev_time) > 3.0:
+                comms.send_scoop_request(True)
+                
+                comms.send_scoop_request(False)
+                continue
+        
+
         # Log the timining of the plan
         start_comms = time.time()
         logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
