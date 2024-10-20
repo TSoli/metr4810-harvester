@@ -25,7 +25,7 @@ class PathPlannerArc:
         return math.ceil((quadrant_area / self.get_single_search_sweep_area()) * (1 + self.overlap_percentage / 100))
     
     def get_adjusted_theta(self):
-        segments = pathPlanner.get_number_of_segments()
+        segments = self.get_number_of_segments()
         return math.radians(90) / segments
     
     def get_all_radii_angles(self):
@@ -70,11 +70,13 @@ class PathPlannerArc:
             current_x -= self.waypoint_seperation * math.cos(angle_rad)
             current_y -= self.waypoint_seperation * math.sin(angle_rad)
             
-            if current_x < 0 or current_y < 0:
+            if (current_x < self.start_x) or (current_y < self.start_y):
                 break
 
             # Update the radius
             radius = math.sqrt((current_x - self.start_x)**2 + (current_y - self.start_y)**2)
+
+        points.append([self.start_x, self.start_y, angle_rad + math.radians(270)])
             
 
         return np.array(points)
@@ -86,3 +88,9 @@ class PathPlannerArc:
             segments.append(self.generate_outward_radial_points(angle))
             segments.append(self.generate_inwards_radial_points(angle))
         return segments
+
+# Plot the segment
+if __name__ == "__main__":
+    pathPlanner = PathPlannerArc(0.3, 0.3, 0.18, 10, 1.4, 0.05)
+    segments = pathPlanner.generate_all_radial_segments()
+    visualize_segments(segments)
