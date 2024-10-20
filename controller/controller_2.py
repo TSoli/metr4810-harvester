@@ -40,10 +40,8 @@ RETURN_TO_DEPOSIT_FAR = 4
 RETURN_TO_DEPOSIT_NEAR = 5
 RETURN_TO_POSITION = 6
 
-
-# CONTROLLER ENUM
-STRAIGHT = 100
-TURN = 101
+# DIGGING FLAG
+digging_flag = False
 
 
 def main(args=None):
@@ -103,7 +101,7 @@ def main(args=None):
     mc.set_mode(CONTINUE)
 
     # Flag for digging
-    digging_flag = False
+    global digging_flag
     prev_time = time.time()
 
     while True:
@@ -128,18 +126,22 @@ def main(args=None):
         if high_ground_request:
             print("Going to high ground")
             high_ground_request = False
+            digging_flag = False
             mc.set_mode(GO_TO_HIGH_GROUND)
         elif start_deployment_request:
             print("Starting deployment")
             start_deployment_request = False
+            digging_flag = False
             mc.set_mode(CONTINUE)
         elif return_to_delivery_point_request:
             print("Returning to delivery point")
             return_to_delivery_point_request = False
+            digging_flag = False
             mc.set_mode(RETURN_TO_DEPOSIT_FAR)
         elif dispense_beans_request:
             print("Dispensing beans")
             dispense_beans_request = False
+            digging_flag = False
             mc.set_mode(DISPENSE_BEANS)
 
         action = np.array([0.0, 0.0])
@@ -152,6 +154,7 @@ def main(args=None):
                 # Handle transitions if necessary
 
                 if current_mode == RETURN_TO_POSITION:
+                    digging_flag = True
                     mc.set_mode(CONTINUE)
                 elif current_mode == RETURN_TO_DEPOSIT_FAR:
                     mc.set_mode(RETURN_TO_DEPOSIT_NEAR)
@@ -161,6 +164,7 @@ def main(args=None):
                 ):
                     mc.set_mode(WAITING_SIGNAL)
                 elif current_mode == CONTINUE:
+                    digging_flag = True
                     mc.set_mode(CONTINUE)
                 continue
 
@@ -214,11 +218,17 @@ class PathFollower:
         return self._path
 
     def get_control_action(self, current_pose):
+        global digging_flag
+
         if self._initial_turn:
+            digging_flag = False
+            
             action_turn = self._hc.get_control_action(current_pose[2], self._path[0][2])
             if action_turn != 0:
                 return (0, action_turn)
 
+            digging_flag = True
+            
             self._hc.reset()
             self._initial_turn = False
 
