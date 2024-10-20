@@ -88,6 +88,7 @@ class Comms:
         """
         addr = (self._ip, self._port)
         connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         connection.bind(addr)
         connection.setblocking(False)
         self._socket = connection
@@ -98,5 +99,7 @@ class Comms:
 
         Will block until the queue is empty.
         """
+        while not self._commands.push(command):
+            pass
         while not self._commands.push(command):
             pass
