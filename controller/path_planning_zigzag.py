@@ -70,7 +70,9 @@ class PathPlannerZigZag:
 
         y_coordinates = []
         for i in range(num_required_passes):
-            y_coordinates.append(i * self.scoop_width + self.scoop_width / 2)
+            y_coordinates.append(
+                (i * self.scoop_width + self.scoop_width / 2) + self.start_y
+            )
 
         return y_coordinates
 

@@ -2,23 +2,26 @@ import math
 import time
 
 import motors
-from drive import DifferentialDrive
-from machine import Pin
-from motors import DCMotor
+from motors import DCMotor, Servo
+from scoop import Scoop
 
 RPM_TO_RAD_S = 2 * math.pi / 60
 
 
 def main():
-    scoop_motor = motors.Servo(motors.ARM_MOTOR_PWM_PIN)
+    scoop_motor = Servo(motors.SCOOP_MOTOR_PWM_PIN)
+    vib_motor = DCMotor(
+        motors.VIB_MOTOR_PWM_PIN, motors.VIB_MOTOR_DIR_PIN, 6e3 * RPM_TO_RAD_S, 50_000
+    )
+    scoop = Scoop(scoop_motor, vib_motor)
 
     time.sleep(1)
-    scoop_motor.angle = scoop_motor.max_angle - math.pi
+    scoop.up()
     while True:
         time.sleep(5)
-        scoop_motor.angle = scoop_motor.max_angle
+        scoop.down()
         time.sleep(5)
-        scoop_motor.angle = scoop_motor.max_angle - math.pi
+        scoop.up()
 
 
 if __name__ == "__main__":
