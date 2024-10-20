@@ -37,6 +37,13 @@ GO_TO_HIGH_GROUND = 2
 DISPENSE_BEANS = 3
 RETURN_TO_DEPOSIT_FAR = 4
 RETURN_TO_DEPOSIT_NEAR = 5
+RETURN_TO_POSITION = 6
+
+# GLOBAL KEYPRESS FLAGS
+high_ground_request = False
+return_to_delivery_point_request = False
+dispense_beans_request = False
+start_deployment_request = False
 
 # CONTROLLER ENUM
 STRAIGHT = 100
@@ -71,6 +78,9 @@ def main(args=None):
     # Generate heading controller
     hc = HeadingController(KP, KI)
 
+    # Construct the path follower
+    pf = PathFollower(ppc, hc)
+
     # Construct the zigzag path class
     zig_zag_planner = PathPlannerZigZag(
         SCOOP_WIDTH, OVERLAP_PERCENTAGE, WAYPOINT_SPACING, 
@@ -79,11 +89,9 @@ def main(args=None):
 
     # Generate the zigzag path
     zig_zag_path = zig_zag_planner.generate_zigzag_path()  
-    number_of_path_segments = zig_zag_planner.get_number_of_segments()
-    path_segment_idx = 0
-
-    mode = 0
-    next_segment_flag = 1
+    
+    # Construct the main controller
+    mc = MainController(zig_zag_path, comms, pf)
 
     while True:
         # Localise the robot
@@ -100,14 +108,49 @@ def main(args=None):
         start_plan = time.time()
         pose = np.array(extract_pose_from_transform(tf_wr))
 
+        # Let the main controller update pose
+        mc.set_current_pose(pose)
+
         # Poll for mode interrupt here!
-        action_heading = pose[2]
-
-
+        if high_ground_request:
+            print("Going to high ground")
+            high_ground_request = False
+            mc.set_mode(GO_TO_HIGH_GROUND)
+        elif start_deployment_request:
+            print("Starting deployment")
+            start_deployment_request = False 
+            mc.set_mode(CONTINUE)
+        elif return_to_delivery_point_request:
+            print("Returning to delivery point")
+            return_to_delivery_point_request = False
+            mc.set_mode(RETURN_TO_DEPOSIT_FAR)
+        elif dispense_beans_request:
+            print("Dispensing beans")
+            dispense_beans_request = False
+            mc.set_mode(DISPENSE_BEANS)
+        
+        # Get the actions for the controller paths that are valuable
+        current_mode = mc.get_mode()
+        if (current_mode != WAITING_SIGNAL):
+            action = mc.mc_get_control_action(pose)
+            
+            if action[0] == 0 and action[1] == 0:
+                # Handle transitions if necessary
+                
+                if (current_mode == RETURN_TO_POSITION):
+                    mc.set_mode(CONTINUE)
+                elif (current_mode == RETURN_TO_DEPOSIT_FAR):
+                    mc.set_mode(RETURN_TO_DEPOSIT_NEAR)
+                elif (current_mode == RETURN_TO_DEPOSIT_NEAR or current_mode == GO_TO_HIGH_GROUND):
+                    mc.set_mode(WAITING_SIGNAL)
+                elif (current_mode == CONTINUE):
+                    mc.set_mode(CONTINUE)
+                continue
+        
         # Log the timining of the plan
         start_comms = time.time()
         logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
-        comms.send_drive_request(0, action)
+        comms.send_drive_request(action[0], action[1])
         start_draw = time.time()
         logger.info(f"Comms took {1e3 * (start_draw - start_comms)}")
 
@@ -175,9 +218,12 @@ class MainController:
         self._comms = comms
         self._path_follower = path_follower
         self._path_segment_idx = 0
-        self._stored_pose = (0, 0)
+        self._pose = (0.0, 0.0)
+        self._stored_pose = (0.0, 0.0)
+        self._container_position = (0.5, 0.5)
+        self._has_been_moved = False
 
-    def set_mode(self, mode, pose):
+    def set_mode(self, mode):
         # Set path based on the current action
         if mode == CONTINUE:
             # Perform opening and closing of door
@@ -188,18 +234,20 @@ class MainController:
             time.sleep(1.0)
 
             # Go to start of segment logic
-
-
-            # Logic for segmenting selection in normal occurance
-            if self._path_segment_idx == len(self._overall_path):
-                self._mode = WAITING_SIGNAL
-                return
+            if self._has_been_moved:
+                mode = RETURN_TO_POSITION
+                self._has_been_moved = False
             else:
-                self._path_segment_idx += 1
+                # Logic for segmenting selection in normal occurance
+                if self._path_segment_idx == len(self._overall_path):
+                    self._mode = WAITING_SIGNAL
+                    return
+                else:
+                    self._path_segment_idx += 1
 
-            # Set the path for the controller
-            current_segment = self._overall_path[self._path_segment_idx - 1]
-            self._path_follower.set_path(current_segment)
+                # Set the path for the controller
+                current_segment = self._overall_path[self._path_segment_idx - 1]
+                self._path_follower.set_path(current_segment)
             
         elif mode == DISPENSE_BEANS:
             # Dispense beans, which is essentially just stopping the robot and going to waiting
@@ -209,24 +257,58 @@ class MainController:
             mode = WAITING_SIGNAL 
 
         elif mode == GO_TO_HIGH_GROUND:
+            # Store the current pose
+            self.set_stored_pose()
+            self.set_has_been_moved()
+
             # Generate path to go to high ground, will be wrapped with desired location
-            
-            path = generate_straight_line(pose, (0.0, 0.0))
+            # CAM FUNCTION
             self._path_follower.set_path(path)
         elif mode == RETURN_TO_DEPOSIT_FAR:
-            path = generate_straight_line(pose, (0.0, 0.0)) 
+            # Store the current pose
+            self.set_stored_pose()
+            self.set_has_been_moved()
+
+            path = generate_straight_line(self.get_current_pose(), self._container_position) 
             self._path_follower.set_path(path)
         elif mode == RETURN_TO_DEPOSIT_NEAR:
-            path = generate_straight_line(pose, (0.0, 0.0)) 
+            # We need custom functionality that does not use either controller to slowly drift forwards
+            path = generate_straight_line(self.get_current_pose(), (0.0, 0.0)) 
             self._path_follower.set_path(path) 
+            pass 
 
-        else:
-            pass
+        if mode == RETURN_TO_POSITION:
+            path = generate_straight_line(self.get_current_pose(), self.get_stored_pose())
+            self._path_follower.set_path(path)
         
         self._mode = mode
     
+    def mc_get_control_action(self):
+        return self._path_follower.get_control_action(self.get_current_pose())
+
     def get_mode(self):
         return self._mode
+    
+    def set_stored_pose(self):
+        self._stored_pose = self._pose
+    
+    def get_stored_pose(self):
+        return self._stored_pose
+    
+    def set_current_pose(self, pose):
+        self._pose = pose
+    
+    def get_current_pose(self):
+        return self._pose
+    
+    def set_has_been_moved(self):
+        self._has_been_moved = True
+    
+    def clear_has_been_moved(self):
+        self._has_been_moved = False
+
+    def get_has_been_moved(self):
+        return self._has_been_moved
     
 
 def generate_straight_line(start, stop, spacing = 0.05):
