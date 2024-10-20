@@ -390,6 +390,11 @@ def generate_straight_line(start, stop, spacing=0.05):
     x_points = np.linspace(start[0], stop[0], num_lines)
     y_points = np.linspace(start[1], stop[1], num_lines)
     
+    # If the points are empty, append the end position
+    if len(x_points) == 0 or len(y_points) == 0:
+        x_points = np.array([stop[0]]) 
+        y_points = np.array([stop[1]])
+
     heading = 0
     if stop[0] == start[0]:
         if start[1] > stop[1]:
