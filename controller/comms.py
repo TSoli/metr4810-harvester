@@ -1,7 +1,7 @@
 import json
+import socket
 import typing
 
-import requests
 from logger import logger
 
 
@@ -17,15 +17,20 @@ class MessageTypes:
 class Comms:
     """Handle communications with the robot"""
 
-    def __init__(self, ip: str) -> None:
+    def __init__(self, ip: str, port: int = 80) -> None:
         """
         Params:
             ip: The ip address to connect to for communications.
         """
-        self._session = requests.Session()
         self._ip = ip
+        self._port = port
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-    def send_drive_request(self, v: float, w: float) -> bool:
+    def __del__(self) -> None:
+        """Clean up"""
+        self._socket.close()
+
+    def send_drive_request(self, v: float, w: float) -> None:
         """
         Send a drive command to control the robot's movement.
 
@@ -36,10 +41,10 @@ class Comms:
         Returns:
             bool: True if the request was successful, False otherwise.
         """
-        request = {"type": MessageTypes.DRIVE, "v": v, "w": w}
-        return self._send_command(request)
+        request = {"type": MessageTypes.DRIVE, "v": float(v), "w": float(w)}
+        self._send_command(request)
 
-    def send_scoop_request(self, up: bool) -> bool:
+    def send_scoop_request(self, up: bool) -> None:
         """
         Send a scoop command to control the robot's scoop mechanism.
 
@@ -51,9 +56,9 @@ class Comms:
         """
 
         request = {"type": MessageTypes.SCOOP, "up": up}
-        return self._send_command(request)
+        self._send_command(request)
 
-    def send_led_request(self, on: bool) -> bool:
+    def send_led_request(self, on: bool) -> None:
         """
         Send a command to control the LED.
 
@@ -64,9 +69,9 @@ class Comms:
             bool: True if the request was successful, False otherwise.
         """
         request = {"type": MessageTypes.LED, "on": on}
-        return self._send_command(request)
+        self._send_command(request)
 
-    def send_container_request(self, open: bool) -> bool:
+    def send_container_request(self, open: bool) -> None:
         """
         Send a command to control the container mechanism.
 
@@ -78,9 +83,9 @@ class Comms:
         """
 
         request = {"type": MessageTypes.CONTAINER, "open": open}
-        return self._send_command(request)
+        self._send_command(request)
 
-    def _send_command(self, data: dict[str, typing.Any]) -> bool:
+    def _send_command(self, data: dict[str, typing.Any]) -> None:
         """Send a command to the Pico W device.
 
         Args:
@@ -94,6 +99,5 @@ class Comms:
             logger.warn(f"Sending command without type:\n{data}")
 
         logger.info(f"Sending:\n{data}")
-        response = self._session.post(self._ip, json=data)
-        logger.info(f"Response:\nHeaders:\n{response.headers}\nText: {response.text}")
-        return response.ok
+        msg = json.dumps(data)
+        self._socket.sendto(msg.encode(), (self._ip, self._port))

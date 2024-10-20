@@ -23,6 +23,7 @@ class Comms:
         self._ip = "0.0.0.0"
         self._port = port
         self._socket = None
+        self._wlan = None
 
     def connect(self) -> None:
         """
@@ -38,10 +39,11 @@ class Comms:
 
         ssid = data["ssid"]
         password = data["password"]
-        self._ip = data["ip"]
-        ip_info = wlan.ifconfig()
-        ip_config = (self._ip, ip_info[1], ip_info[2], ip_info[3])
-        wlan.ifconfig(ip_config)
+        # self._ip = data["ip"]
+        # ip_info = wlan.ifconfig()
+        # ip_config = (self._ip, ip_info[1], ip_info[2], ip_info[3])
+        # wlan.ifconfig(ip_config)
+        self._wlan = wlan
         logger.info("Connecting to wifi...")
         while True:
             try:
@@ -63,36 +65,12 @@ class Comms:
 
         # TODO: Handle sending logs?
         while True:
-            cl, addr = self._socket.accept()  # type: ignore
-            while True:
-                headers = cl.recv(1024).decode()
-                if not headers:
-                    cl.close()
-                    break
-
-                content_length = int(
-                    headers.split("Content-Length: ")[1].split("\r\n")[0]
-                )
-
-                if "Content-Type" in headers:
-                    content_type = headers.split("Content-Type: ")[1].split("\r\n")[0]
-                else:
-                    content_type = None
-
-                body = cl.recv(content_length).decode()
-                if not body:
-                    cl.close()
-                    break
-
-                message = ""
-                # Prepare response
-                headers = f"HTTP/1.0 200 OK\r\nContent-type: text/plain\r\nContent-Length: {len(message)}\r\nConnection: keep-alive\r\n\r\n"
-                cl.send(headers.encode())
-                # cl.send(message.encode())
-
-                if content_type == "application/json":
-                    command = json.loads(body)
-                    self._queue_command(command)
+            data = self._socket.recv(1024).decode()
+            try:
+                command = json.loads(data)
+            except Exception as e:
+                continue
+            self._queue_command(command)
 
     def _open_socket(self) -> None:
         """
@@ -102,10 +80,8 @@ class Comms:
             Opens a socket.
         """
         addr = (self._ip, self._port)
-        connection = socket.socket()
+        connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         connection.bind(addr)
-        # Only one device should connect - the controller
-        connection.listen(1)
         self._socket = connection
 
     def _queue_command(self, command: dict) -> None:
@@ -114,4 +90,5 @@ class Comms:
 
         Will block until the queue is empty.
         """
-        self._commands.push(command)
+        while not self._commands.push(command):
+            pass

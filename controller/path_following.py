@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -105,6 +107,7 @@ class PurePursuitController:
         tf_bw = np.linalg.inv(tf_wb)
         goal_point_b = tf_bw @ np.array([goal_point[0], goal_point[1], 1])
         curvature = -2 * goal_point_b[0] / np.linalg.norm(goal_point_b[:2]) ** 2
+        # TODO: Slow down when close?
         velocity = self._avg_speed
 
         if goal_point_b[1] < 0:
@@ -112,3 +115,42 @@ class PurePursuitController:
 
         omega = velocity * curvature
         return np.array([velocity, omega])
+
+
+class HeadingController:
+    """A PI controller for the robot heading"""
+
+    def __init__(self, kp: float, ki: float, tol: float = np.deg2rad(5)) -> None:
+        """
+        Params:
+            tol: Tolerance in rad for reaching the desired heading.
+        """
+        self._tol = tol
+        self._kp = kp
+        self._ki = ki
+        self._integral = 0
+        self._last_time = None
+
+    def reset(self) -> None:
+        """Reset the integral"""
+        self._integral = 0
+        self._last_time = None
+
+    def get_control_action(self, heading: float, goal: float) -> float:
+        """
+        Get an angular velocity control action to reach the goal heading.
+
+        Params:
+            heading: The current heading of the robot.
+            goal: The goal heading.
+
+        Returns:
+            angular velocity of robot (rad/s).
+        """
+        error = goal - heading
+        if self._last_time is not None:
+            dt = time.time() - self._last_time
+            self._integral += dt * error
+
+        self._last_time = time.time()
+        return self._kp * error + self._ki * self._integral

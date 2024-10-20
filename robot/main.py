@@ -116,10 +116,7 @@ def main():
     comms = Comms(commands)
     comms.connect()
     _thread.start_new_thread(comms.run, ())
-    try:
-        control(drive, scoop, container, led, commands)
-    except Exception as e:
-        logger.warning(e)
+    control(drive, scoop, container, led, commands)
 
 
 if __name__ == "__main__":
