@@ -10,7 +10,7 @@ from localisation import (ROBOT_MARKERS, BufferlessVideoCapture, Localisation,
                           draw_axes, extract_pose_from_transform,
                           get_cam_params)
 from logger import logger
-from path_following import HeadingController, PurePursuitController, straight_line_movement
+from path_following import HeadingController, PurePursuitController
 from path_planning_zigzag import PathPlannerZigZag
 
 DEFAULT_SIZE = "DICT_4X4_50"
@@ -31,21 +31,16 @@ KP = 0.1
 KI = 0.01
 
 # MODE ENUM
-CONTINUE_SEQUENCE_START = 0
-CONTINUE_SEQUENCE_TURN = 1
-CONTINUE_SEQUENCE_STRAIGHT = 2
-RETURN_TO_DEPOSIT = 3
-DISPENSE_BEANS = 4
-GO_TO_HIGH_GROUND = 5
-WAITING_SIGNAL = 6
+WAITING_SIGNAL = 0
+CONTINUE = 1
+GO_TO_HIGH_GROUND = 2
+DISPENSE_BEANS = 3
+RETURN_TO_DEPOSIT_FAR = 4
+RETURN_TO_DEPOSIT_NEAR = 5
 
 # CONTROLLER ENUM
 STRAIGHT = 100
 TURN = 101
-
-# Global variabls
-mode = 0
-controller = 100
 
 def main(args=None):
     # Get Camera
@@ -106,69 +101,8 @@ def main(args=None):
         pose = np.array(extract_pose_from_transform(tf_wr))
 
         # Poll for mode interrupt here!
+        action_heading = pose[2]
 
-        # Set path based on the current action
-        if mode == RETURN_TO_DEPOSIT:
-            # Perform return to deposit signal and wait for signal when finished
-
-            mode = WAITING_SIGNAL
-        elif mode == DISPENSE_BEANS:
-            # Dispense beans, which is essentially just stopping the robot and going to waiting
-
-            # 
-            
-            mode = WAITING_SIGNAL
-            
-        elif mode == GO_TO_HIGH_GROUND:
-            # Perform go to high ground sequence and wait for signal when finished
-            action_values = [0, 0]
-
-            mode = WAITING_SIGNAL
-            
-        elif mode == CONTINUE_SEQUENCE_START:
-            # Perform opening and closing of door sequence, need to import and run function
-            
-            # Continue to previous path, going to current segment
-            next_segment_flag = 0
-            mode = CONTINUE_SEQUENCE_START
-
-        elif mode == CONTINUE_SEQUENCE_STRAIGHT:
-            # Logic for segmenting selection in normal occurance
-            if path_segment_idx == number_of_path_segments and next_segment_flag == 1:
-                break
-            else:
-                path_segment_idx += 1
-
-            # Ensure we go to next segment
-            next_segment_flag = 1
-
-            # Set the path for the controller
-            current_segment = zig_zag_path[path_segment_idx - 1]
-            ppc.path = current_segment       
-
-            # Go along the straight line
-            path_complete = straight_line_movement(cap, loc, hc, ppc, comms, current_segment, args, mtx, dist)
-            if not path_complete:
-                # Interupt occured
-                interupt_flag = 1
-                return 
-            
-            # Move on to the next segment after a pause
-            time.sleep(0.5)
-
-        elif mode == WAITING_SIGNAL:
-            # Waiting for signal
-            time.sleep(0.1)
-        else:
-            time.sleep(0.1)
-        
-        if mode == STRAIGH:
-        
-        # Get the control action and check to see if you are at the end of the path
-        action = hc.get_control_action(pose[2], current_segment[0][2])
-        if abs(pose[2] - current_segment[0][2]) < hc.get_tolerance():
-            mode = WAITING_SIGNAL
-            break
 
         # Log the timining of the plan
         start_comms = time.time()
@@ -201,3 +135,110 @@ if __name__ == "__main__":
     parser.add_argument("--size", default=DEFAULT_SIZE)
     parser.add_argument("--square", type=float, default=0.12)
     main(parser.parse_args())
+
+class PathFollower:
+    def __init__(self, ppc, hc):
+        self._path = None
+        self._ppc = ppc
+        self._hc = hc
+        self._mode = 0
+        self._initial_turn = True
+
+    def set_path(self, path):
+        self._path = path
+        self._ppc.path = path
+        self._initial_turn = True
+
+    def get_path(self):
+        return self._path
+    
+    def get_control_action(self, current_pose):
+        if self._initial_turn:
+            action_turn = self._hc.get_control_action(current_pose[2], self._path[0][2])
+            if action_turn != 0:
+                return (0, action_turn)
+            
+            self._initial_turn = False
+
+        action_straight = self._ppc.get_control_action(current_pose)
+        if np.any(action_straight) != 0:
+            return action_straight
+        
+        return (0, 0)
+        
+
+class MainController:
+    def __init__(self, path, comms : Comms, path_follower : PathFollower):
+        self._mode = WAITING_SIGNAL
+        self._overall_path = path
+        self._current_segment = 0
+        self._comms = comms
+        self._path_follower = path_follower
+        self._path_segment_idx = 0
+        self._stored_pose = (0, 0)
+
+    def set_mode(self, mode, pose):
+        # Set path based on the current action
+        if mode == CONTINUE:
+            # Perform opening and closing of door
+            self._comms.send_container_request(True)
+            time.sleep(5.0)
+
+            self._comms.send_container_request(False)
+            time.sleep(1.0)
+
+            # Go to start of segment logic
+
+
+            # Logic for segmenting selection in normal occurance
+            if self._path_segment_idx == len(self._overall_path):
+                self._mode = WAITING_SIGNAL
+                return
+            else:
+                self._path_segment_idx += 1
+
+            # Set the path for the controller
+            current_segment = self._overall_path[self._path_segment_idx - 1]
+            self._path_follower.set_path(current_segment)
+            
+        elif mode == DISPENSE_BEANS:
+            # Dispense beans, which is essentially just stopping the robot and going to waiting
+            self._comms.send_drive_request(0, 0)
+            
+            # Change mode to be waiting for a signal
+            mode = WAITING_SIGNAL 
+
+        elif mode == GO_TO_HIGH_GROUND:
+            # Generate path to go to high ground, will be wrapped with desired location
+            
+            path = generate_straight_line(pose, (0.0, 0.0))
+            self._path_follower.set_path(path)
+        elif mode == RETURN_TO_DEPOSIT_FAR:
+            path = generate_straight_line(pose, (0.0, 0.0)) 
+            self._path_follower.set_path(path)
+        elif mode == RETURN_TO_DEPOSIT_NEAR:
+            path = generate_straight_line(pose, (0.0, 0.0)) 
+            self._path_follower.set_path(path) 
+
+        else:
+            pass
+        
+        self._mode = mode
+    
+    def get_mode(self):
+        return self._mode
+    
+
+def generate_straight_line(start, stop, spacing = 0.05):
+    # Generate the points for the straight line
+    num_lines = round(math.sqrt(abs(stop[0] - start[0]) ** 2 + abs(stop[1] - start[1]) ** 2) / spacing)
+
+    # Generate the x and y points
+    x_points = np.linspace(start[0], stop[0], num_lines)
+    y_points = np.linspace(start[1], stop[1], num_lines)
+    heading = math.tan((stop[1] - start[1])/(stop[0] - start[0]))
+
+    # Combine the points so that it is (x, y, heading)
+    points = np.column_stack((x_points, y_points, np.ones(num_lines) * heading))
+
+    return points
