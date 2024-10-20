@@ -194,7 +194,7 @@ def main(args=None):
                     mc.set_mode(CONTINUE)
                 continue
         
-        if digging_flag == True and 0 < mc._path_follower._ppc.get_path_angle() < (-math.pi/2):
+        if digging_flag == True and (-math.pi/2) < mc._path_follower._ppc.get_path_angle() < (0):
             # Send the scoop request
             if (time.time() - prev_time) > 3.0:
                 time.sleep(0.05)
@@ -317,6 +317,15 @@ class MainController:
 
             # Set the path for the controller
             current_segment = self._overall_path[self._path_segment_idx - 1]
+            if (-math.pi/2) < current_segment[0][2] < (0):
+                digging_flag = True
+                time.sleep(0.05)
+                self._comms.send_scoop_request(False)
+            else:
+                digging_flag = False
+                time.sleep(0.05)
+                self._comms.send_scoop_request(True)
+
             logger.info(f"Current segment: {current_segment}")
             self._path_follower.set_path(current_segment)
 
