@@ -79,7 +79,7 @@ def main(args=None):
     hc = HeadingController(KP, KI)
 
     # Construct the path follower
-    pf = PathFollower(ppc, hc)
+    pf = PathFollower(ppc, hc, comms)
 
     # Construct the zigzag path class
     zig_zag_planner = PathPlannerZigZag(
@@ -103,6 +103,9 @@ def main(args=None):
     # Flag for digging
     global digging_flag
     prev_time = time.time()
+
+    # TODO REMOVE
+    temp_flag = False
 
     while True:
         # Localise the robot
@@ -144,6 +147,10 @@ def main(args=None):
             digging_flag = False
             mc.set_mode(DISPENSE_BEANS)
 
+        if (time.time - prev_time) > 15.0 and temp_flag == False:
+            mc.set_mode(RETURN_TO_DEPOSIT_FAR)
+            temp_flag = True
+
         action = np.array([0.0, 0.0])
         # Get the actions for the controller paths that are valuable
         current_mode = mc.get_mode()
@@ -177,6 +184,8 @@ def main(args=None):
         #         prev_time = time.time()
         #         continue
 
+        
+
         # Log the timining of the plan
         start_comms = time.time()
         logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
@@ -202,12 +211,13 @@ def main(args=None):
 
 
 class PathFollower:
-    def __init__(self, ppc, hc):
+    def __init__(self, ppc, hc, comms : Comms):
         self._path = None
         self._ppc = ppc
         self._hc = hc
         self._mode = 0
         self._initial_turn = True
+        self._comms = comms
 
     def set_path(self, path):
         self._path = path
@@ -228,7 +238,8 @@ class PathFollower:
                 return (0, action_turn)
 
             digging_flag = True
-            
+            self._comms.send_scoop_request(False)
+
             self._hc.reset()
             self._initial_turn = False
 
@@ -255,6 +266,7 @@ class MainController:
 
     def set_mode(self, mode):
         # Set path based on the current action
+        global digging_flag
         if mode == CONTINUE:
             # Go to start of segment logic
             if self._has_been_moved:
@@ -274,6 +286,9 @@ class MainController:
                 else:
                     self._path_segment_idx += 1
 
+                # Lower Scoop
+                self._comms.send_scoop_request(False)
+
                 # Set the path for the controller
                 current_segment = self._overall_path[self._path_segment_idx - 1]
                 logger.info(f"Current segment: {current_segment}")
@@ -290,6 +305,8 @@ class MainController:
             # Store the current pose
             self.set_stored_pose()
             self.set_has_been_moved()
+            self._comms.send_scoop_request(True)
+            digging_flag = False
 
             # Generate path to go to high ground, will be wrapped with desired location
             # CAM FUNCTION
@@ -298,21 +315,28 @@ class MainController:
             # Store the current pose
             self.set_stored_pose()
             self.set_has_been_moved()
+            self._comms.send_scoop_request(True)
+            digging_flag = False
 
             path = generate_straight_line(
-                self.get_current_pose(), self._container_position
+                self.get_current_pose(), self._container_position, WAYPOINT_SPACING
             )
             self._path_follower.set_path(path)
         elif mode == RETURN_TO_DEPOSIT_NEAR:
             # We need custom functionality that does not use either controller to slowly drift forwards
-            path = generate_straight_line(self.get_current_pose(), (0.0, 0.0))
+            path = generate_straight_line(self.get_current_pose(), (0.1, 0.1), WAYPOINT_SPACING)
+            digging_flag = False
             self._path_follower.set_path(path)
             pass
 
         if mode == RETURN_TO_POSITION:
+            digging_flag = False
+            self._comms.send_scoop_request(True)
+            
             path = generate_straight_line(
-                self.get_current_pose(), self.get_stored_pose()
+                self.get_current_pose(), self.get_stored_pose(), WAYPOINT_SPACING
             )
+            
             self._path_follower.set_path(path)
 
         self._mode = mode
