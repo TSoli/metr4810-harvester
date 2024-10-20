@@ -41,7 +41,7 @@ class DCMotor:
     def speed(self, val: float) -> None:
         """Set the motor speed in rad/s"""
         # clip the speed
-        self._speed = max(min(val, self.max_speed), -self.max_speed)
+        self._speed = max(min(val, 0.99 * self.max_speed), -0.99 * self.max_speed)
 
         if self._speed < 0:
             self._dir.value(0)

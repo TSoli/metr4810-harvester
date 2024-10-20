@@ -1,14 +1,8 @@
 import time
 
 import numpy as np
-from numpy.typing import NDArray
-
-import cv2
-from comms import Comms
-from localisation import (ROBOT_MARKERS, BufferlessVideoCapture, Localisation,
-                          draw_axes, extract_pose_from_transform,
-                          get_cam_params)
 from logger import logger
+from numpy.typing import NDArray
 
 
 class PurePursuitController:
@@ -55,6 +49,14 @@ class PurePursuitController:
         look_ahead_point = self._find_goal_point(idx)
         return self._find_control_action(pose, look_ahead_point)
 
+    @property
+    def avg_speed(self) -> float:
+        return self._avg_speed
+
+    @avg_speed.setter
+    def avg_speed(self, speed: float) -> None:
+        self._avg_speed = speed
+
     def _find_closest_point(self, pose: NDArray[np.float64]) -> tuple[np.float64, int]:
         """
         Find the closest point on the path to the robot.
@@ -88,6 +90,7 @@ class PurePursuitController:
                 break
             goal_point = pt
 
+        logger.info(f"Goal point: {goal_point}")
         return goal_point
 
     def _find_control_action(
@@ -114,8 +117,12 @@ class PurePursuitController:
         tf_bw = np.linalg.inv(tf_wb)
         goal_point_b = tf_bw @ np.array([goal_point[0], goal_point[1], 1])
         curvature = -2 * goal_point_b[0] / np.linalg.norm(goal_point_b[:2]) ** 2
-        # TODO: Slow down when close?
+        distance = np.linalg.norm(goal_point_b[:2])
         velocity = self._avg_speed
+
+        if distance < 3 * self._tol:
+            # TODO: Slow down when close?
+            velocity *= 0.4
 
         if goal_point_b[1] < 0:
             velocity *= -1
@@ -143,10 +150,6 @@ class HeadingController:
         self._integral = 0
         self._last_time = None
 
-    def get_tolerance(self) -> float:
-        """Get the tolerance for the controller."""
-        return self._tol
-
     def get_control_action(self, heading: float, goal: float) -> float:
         """
         Get an angular velocity control action to reach the goal heading.
@@ -159,107 +162,16 @@ class HeadingController:
             angular velocity of robot (rad/s).
         """
         error = goal - heading
+        if abs(error) > np.pi:
+            err_sgn = np.sign(error)
+            error = -err_sgn * ((2 * np.pi) - abs(error))
+
+        if abs(error) < self._tol:
+            return 0
+
         if self._last_time is not None:
             dt = time.time() - self._last_time
             self._integral += dt * error
 
         self._last_time = time.time()
-        
         return self._kp * error + self._ki * self._integral
-
-def straight_line_movement(cap: BufferlessVideoCapture, loc: Localisation, 
-                            hc: HeadingController, ppc: PurePursuitController, comms: Comms, current_segment,
-                            args, mtx, dist) -> bool:
-    # Get the control action
-    while True:
-        frame = cap.read()
-
-        # Localise the initial points and get the current heading
-        start_loc = time.time()
-        tf_wr = loc.localise(frame)
-        logger.info(f"Localisation took: {1e3 * (time.time() - start_loc)}ms")
-        if tf_wr is None:
-            continue
-        
-        # Extract the pose
-        start_plan = time.time()
-        pose = np.array(extract_pose_from_transform(tf_wr))
-
-        # Get the control action and check to see if you are at the end of the path
-        action = hc.get_control_action(pose[2], current_segment[0][2])
-        if abs(pose[2] - current_segment[0][2]) < hc.get_tolerance():
-            break
-
-        # Log the timining of the plan
-        start_comms = time.time()
-        logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
-        comms.send_drive_request(0, action)
-        start_draw = time.time()
-        logger.info(f"Comms took {1e3 * (start_draw - start_comms)}")
-
-        # Draw axis for the corners
-        tf_cw = loc.tf_cw
-        draw_axes(frame, args.square, tf_cw, mtx, dist)
-
-        # Draw the axis for the robot
-        tf_cr = tf_cw @ tf_wr
-        draw_axes(frame, args.square, tf_cr, mtx, dist)
-
-        cv2.imshow("frame", frame)
-        key = cv2.waitKey(1)
-        if key == ord("q"):
-            exit(0)
-
-        logger.info(f"Draw took {1e3 * (time.time() - start_draw)}")
-        time.sleep(0.05)
-
-    # Stop! Then sleep for half a second
-    comms.send_drive_request(0, 0)
-    time.sleep(0.5)
-
-    while True:
-        frame = cap.read()
-
-        # Localise the initial points
-        start_loc = time.time()
-        tf_wr = loc.localise(frame)
-        logger.info(f"Localisation took: {1e3 * (time.time() - start_loc)}ms")
-        if tf_wr is None:
-            continue
-        
-        # Extract the pose
-        start_plan = time.time()
-        pose = np.array(extract_pose_from_transform(tf_wr))
-
-        # Get the control action and check to see if you are at the end of the path
-        action = ppc.get_control_action(pose)
-        if np.all(action == 0):
-            break
-
-        # Log the timining of the plan
-        start_comms = time.time()
-        logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
-        comms.send_drive_request(action[0], action[1])
-        start_draw = time.time()
-        logger.info(f"Comms took {1e3 * (start_draw - start_comms)}")
-
-        # Draw axis for the corners
-        tf_cw = loc.tf_cw
-        draw_axes(frame, args.square, tf_cw, mtx, dist)
-
-        # Draw the axis for the robot
-        tf_cr = tf_cw @ tf_wr
-        draw_axes(frame, args.square, tf_cr, mtx, dist)
-
-        cv2.imshow("frame", frame)
-        key = cv2.waitKey(1)
-        if key == ord("q"):
-            exit(0)
-
-        logger.info(f"Draw took {1e3 * (time.time() - start_draw)}")
-        time.sleep(0.05)
-
-    # Stop!
-    comms.send_drive_request(0, 0)
-
-    return True

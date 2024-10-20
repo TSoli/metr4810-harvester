@@ -1,5 +1,6 @@
 import _thread
 import math
+import time
 from queue import Queue
 
 import motors
@@ -115,6 +116,8 @@ def main():
     drive, scoop, container, led = setup_actuators()
     comms = Comms(commands)
     comms.connect()
+    logger.info(f"Connected on ip: {comms._ip}")
+    time.sleep(1)
     _thread.start_new_thread(comms.run, ())
     control(drive, scoop, container, led, commands)
 

@@ -10,44 +10,46 @@ from localisation import (ROBOT_MARKERS, BufferlessVideoCapture, Localisation,
                           draw_axes, extract_pose_from_transform,
                           get_cam_params)
 from logger import logger
-from path_following import HeadingController, PurePursuitController, straight_line_movement
+from path_following import HeadingController, PurePursuitController
 from path_planning_zigzag import PathPlannerZigZag
+from utils.path_planning_visualiser import visualize_segments_zig_zag
 
 DEFAULT_SIZE = "DICT_4X4_50"
 WHEEL_RADIUS = 0.0396  # radius of wheel in m
 RPM_TO_RAD_S = 2 * math.pi / 60
 
 # CONSTANTS FOR THE PATH
-COVERABLE_AREA_WIDTH = 1.900
-COVERABLE_AREA_HEIGHT = 1.900
-WAYPOINT_SPACING = 0.100
-START_X = 0.100
-START_Y = 0.100
+COVERABLE_AREA_WIDTH = 1.600
+COVERABLE_AREA_HEIGHT = 1.600
+WAYPOINT_SPACING = 0.05
+START_X = 0.200
+START_Y = 0.200
 SCOOP_WIDTH = 0.180
 OVERLAP_PERCENTAGE = 20
 
 # CONSTANTS FOR PI CONTROLLER
-KP = 0.1
-KI = 0.01
+KP = 1
+KI = 0.4
 
 # MODE ENUM
-CONTINUE_SEQUENCE_START = 0
-CONTINUE_SEQUENCE_TURN = 1
-CONTINUE_SEQUENCE_STRAIGHT = 2
-RETURN_TO_DEPOSIT = 3
-DISPENSE_BEANS = 4
-GO_TO_HIGH_GROUND = 5
-WAITING_SIGNAL = 6
+WAITING_SIGNAL = 0
+CONTINUE = 1
+GO_TO_HIGH_GROUND = 2
+DISPENSE_BEANS = 3
+RETURN_TO_DEPOSIT_FAR = 4
+RETURN_TO_DEPOSIT_NEAR = 5
+RETURN_TO_POSITION = 6
 
-# CONTROLLER ENUM
-STRAIGHT = 100
-TURN = 101
+# DIGGING FLAG
+digging_flag = False
 
-# Global variabls
-mode = 0
-controller = 100
 
 def main(args=None):
+    # GLOBAL KEYPRESS FLAGS
+    high_ground_request = False
+    return_to_delivery_point_request = False
+    dispense_beans_request = False
+    start_deployment_request = False
     # Get Camera
     dev = args.device
     cap = BufferlessVideoCapture(dev)
@@ -71,24 +73,39 @@ def main(args=None):
     comms = Comms(ip)
 
     # Genearte the overall path
-    ppc = PurePursuitController(look_ahead, 0.4 * max_speed, tol=0.05)
-    
+    ppc = PurePursuitController(look_ahead, 0.4 * max_speed, tol=0.025)
+
     # Generate heading controller
     hc = HeadingController(KP, KI)
 
+    # Construct the path follower
+    pf = PathFollower(ppc, hc, comms)
+
     # Construct the zigzag path class
     zig_zag_planner = PathPlannerZigZag(
-        SCOOP_WIDTH, OVERLAP_PERCENTAGE, WAYPOINT_SPACING, 
-        START_X, START_Y, COVERABLE_AREA_WIDTH, COVERABLE_AREA_HEIGHT
+        COVERABLE_AREA_WIDTH,
+        COVERABLE_AREA_HEIGHT,
+        WAYPOINT_SPACING,
+        START_X,
+        START_Y,
+        SCOOP_WIDTH,
+        OVERLAP_PERCENTAGE,
     )
 
     # Generate the zigzag path
-    zig_zag_path = zig_zag_planner.generate_zigzag_path()  
-    number_of_path_segments = zig_zag_planner.get_number_of_segments()
-    path_segment_idx = 0
+    zig_zag_path = zig_zag_planner.generate_zigzag_path()
+    visualize_segments_zig_zag(zig_zag_path)
 
-    mode = 0
-    next_segment_flag = 1
+    # Construct the main controller
+    mc = MainController(zig_zag_path, comms, pf)
+    mc.set_mode(CONTINUE)
+
+    # Flag for digging
+    global digging_flag
+    prev_time = time.time()
+
+    # TODO REMOVE
+    temp_flag = False
 
     while True:
         # Localise the robot
@@ -100,80 +117,77 @@ def main(args=None):
         logger.info(f"Localisation took: {1e3 * (time.time() - start_loc)}ms")
         if tf_wr is None:
             continue
-        
+
         # Extract the pose
         start_plan = time.time()
         pose = np.array(extract_pose_from_transform(tf_wr))
 
+        # Let the main controller update pose
+        mc.set_current_pose(pose)
+
         # Poll for mode interrupt here!
+        if high_ground_request:
+            print("Going to high ground")
+            high_ground_request = False
+            digging_flag = False
+            mc.set_mode(GO_TO_HIGH_GROUND)
+        elif start_deployment_request:
+            print("Starting deployment")
+            start_deployment_request = False
+            digging_flag = False
+            mc.set_mode(CONTINUE)
+        elif return_to_delivery_point_request:
+            print("Returning to delivery point")
+            return_to_delivery_point_request = False
+            digging_flag = False
+            mc.set_mode(RETURN_TO_DEPOSIT_FAR)
+        elif dispense_beans_request:
+            print("Dispensing beans")
+            dispense_beans_request = False
+            digging_flag = False
+            mc.set_mode(DISPENSE_BEANS)
 
-        # Set path based on the current action
-        if mode == RETURN_TO_DEPOSIT:
-            # Perform return to deposit signal and wait for signal when finished
+        if (time.time() - prev_time) > 15.0 and temp_flag == False:
+            mc.set_mode(RETURN_TO_DEPOSIT_FAR)
+            temp_flag = True
 
-            mode = WAITING_SIGNAL
-        elif mode == DISPENSE_BEANS:
-            # Dispense beans, which is essentially just stopping the robot and going to waiting
+        action = np.array([0.0, 0.0])
+        # Get the actions for the controller paths that are valuable
+        current_mode = mc.get_mode()
+        if current_mode != WAITING_SIGNAL:
+            action = mc.mc_get_control_action()
 
-            # 
-            
-            mode = WAITING_SIGNAL
-            
-        elif mode == GO_TO_HIGH_GROUND:
-            # Perform go to high ground sequence and wait for signal when finished
-            action_values = [0, 0]
+            if action[0] == 0 and action[1] == 0:
+                # Handle transitions if necessary
 
-            mode = WAITING_SIGNAL
-            
-        elif mode == CONTINUE_SEQUENCE_START:
-            # Perform opening and closing of door sequence, need to import and run function
-            
-            # Continue to previous path, going to current segment
-            next_segment_flag = 0
-            mode = CONTINUE_SEQUENCE_START
+                if current_mode == RETURN_TO_POSITION:
+                    digging_flag = True
+                    mc.set_mode(CONTINUE)
+                elif current_mode == RETURN_TO_DEPOSIT_FAR:
+                    mc.set_mode(RETURN_TO_DEPOSIT_NEAR)
+                elif (
+                    current_mode == RETURN_TO_DEPOSIT_NEAR
+                    or current_mode == GO_TO_HIGH_GROUND
+                ):
+                    mc.set_mode(WAITING_SIGNAL)
+                elif current_mode == CONTINUE:
+                    digging_flag = True
+                    mc.set_mode(CONTINUE)
+                continue
 
-        elif mode == CONTINUE_SEQUENCE_STRAIGHT:
-            # Logic for segmenting selection in normal occurance
-            if path_segment_idx == number_of_path_segments and next_segment_flag == 1:
-                break
-            else:
-                path_segment_idx += 1
-
-            # Ensure we go to next segment
-            next_segment_flag = 1
-
-            # Set the path for the controller
-            current_segment = zig_zag_path[path_segment_idx - 1]
-            ppc.path = current_segment       
-
-            # Go along the straight line
-            path_complete = straight_line_movement(cap, loc, hc, ppc, comms, current_segment, args, mtx, dist)
-            if not path_complete:
-                # Interupt occured
-                interupt_flag = 1
-                return 
-            
-            # Move on to the next segment after a pause
-            time.sleep(0.5)
-
-        elif mode == WAITING_SIGNAL:
-            # Waiting for signal
-            time.sleep(0.1)
-        else:
-            time.sleep(0.1)
-        
-        if mode == STRAIGH:
-        
-        # Get the control action and check to see if you are at the end of the path
-        action = hc.get_control_action(pose[2], current_segment[0][2])
-        if abs(pose[2] - current_segment[0][2]) < hc.get_tolerance():
-            mode = WAITING_SIGNAL
-            break
+        # if digging_flag == True:
+        #     # Send the scoop request
+        #     if (time.time - prev_time) > 3.0:
+        #         comms.send_scoop_request(True)
+        #         time.sleep(1.0)
+        #         comms.send_scoop_request(False)
+        #         prev_time = time.time()
+        #         continue
 
         # Log the timining of the plan
         start_comms = time.time()
         logger.info(f"Plan took {1e3 * (start_comms - start_plan)}")
-        comms.send_drive_request(0, action)
+        comms.send_drive_request(action[0], action[1])
         start_draw = time.time()
         logger.info(f"Comms took {1e3 * (start_draw - start_comms)}")
 
@@ -192,6 +206,187 @@ def main(args=None):
 
         logger.info(f"Draw took {1e3 * (time.time() - start_draw)}")
         time.sleep(0.05)
+
+
+class PathFollower:
+    def __init__(self, ppc, hc, comms: Comms):
+        self._path = None
+        self._ppc = ppc
+        self._hc = hc
+        self._mode = 0
+        self._initial_turn = True
+        self._comms = comms
+
+    def set_path(self, path):
+        self._path = path
+        self._ppc.path = path
+        self._initial_turn = True
+
+    def get_path(self):
+        return self._path
+
+    def get_control_action(self, current_pose):
+        global digging_flag
+
+        if self._initial_turn:
+            digging_flag = False
+
+            action_turn = self._hc.get_control_action(current_pose[2], self._path[0][2])
+            if action_turn != 0:
+                return (0, action_turn)
+
+            digging_flag = True
+            # self._comms.send_scoop_request(False)
+
+            self._hc.reset()
+            self._initial_turn = False
+
+        action_straight = self._ppc.get_control_action(current_pose)
+        if np.any(action_straight != 0):
+            return action_straight
+
+        self._hc.reset()
+        return (0, 0)
+
+
+class MainController:
+    def __init__(self, path, comms: Comms, path_follower: PathFollower):
+        self._mode = WAITING_SIGNAL
+        self._overall_path = path
+        self._current_segment = 0
+        self._comms = comms
+        self._path_follower = path_follower
+        self._path_segment_idx = 0
+        self._pose = (0.0, 0.0)
+        self._stored_pose = (0.0, 0.0)
+        self._container_position = (0.5, 0.5)
+        self._has_been_moved = False
+
+    def set_mode(self, mode):
+        # Set path based on the current action
+        global digging_flag
+        if mode == CONTINUE:
+            # Go to start of segment logic
+            if self._has_been_moved:
+                # Perform opening and closing of door
+                self._comms.send_container_request(True)
+                time.sleep(5.0)
+
+                self._comms.send_container_request(False)
+                time.sleep(1.0)
+                mode = RETURN_TO_POSITION
+                self._has_been_moved = False
+            else:
+                # Logic for segmenting selection in normal occurance
+                if self._path_segment_idx == len(self._overall_path):
+                    self._mode = WAITING_SIGNAL
+                    return
+                else:
+                    self._path_segment_idx += 1
+
+                # Lower Scoop
+                # self._comms.send_scoop_request(False)
+
+                # Set the path for the controller
+                current_segment = self._overall_path[self._path_segment_idx - 1]
+                logger.info(f"Current segment: {current_segment}")
+                self._path_follower.set_path(current_segment)
+
+        elif mode == DISPENSE_BEANS:
+            # Dispense beans, which is essentially just stopping the robot and going to waiting
+            self._comms.send_drive_request(0, 0)
+
+            # Change mode to be waiting for a signal
+            mode = WAITING_SIGNAL
+
+        elif mode == GO_TO_HIGH_GROUND:
+            # Store the current pose
+            self.set_stored_pose()
+            self.set_has_been_moved()
+            # self._comms.send_scoop_request(True)
+            digging_flag = False
+
+            # Generate path to go to high ground, will be wrapped with desired location
+            # CAM FUNCTION
+            self._path_follower.set_path(path)
+        elif mode == RETURN_TO_DEPOSIT_FAR:
+            # Store the current pose
+            self.set_stored_pose()
+            self.set_has_been_moved()
+            # self._comms.send_scoop_request(True)
+            digging_flag = False
+
+            path = generate_straight_line(
+                self.get_current_pose(), self._container_position, WAYPOINT_SPACING
+            )
+            self._path_follower.set_path(path)
+        elif mode == RETURN_TO_DEPOSIT_NEAR:
+            # We need custom functionality that does not use either controller to slowly drift forwards
+            path = generate_straight_line(
+                self.get_current_pose(), (0.1, 0.1), WAYPOINT_SPACING
+            )
+            digging_flag = False
+            self._path_follower.set_path(path)
+            pass
+
+        if mode == RETURN_TO_POSITION:
+            digging_flag = False
+            # self._comms.send_scoop_request(True)
+
+            path = generate_straight_line(
+                self.get_current_pose(), self.get_stored_pose(), WAYPOINT_SPACING
+            )
+
+            self._path_follower.set_path(path)
+
+        self._mode = mode
+
+    def mc_get_control_action(self):
+        return self._path_follower.get_control_action(self.get_current_pose())
+
+    def get_mode(self):
+        return self._mode
+
+    def set_stored_pose(self):
+        self._stored_pose = self._pose
+
+    def get_stored_pose(self):
+        return self._stored_pose
+
+    def set_current_pose(self, pose):
+        self._pose = pose
+
+    def get_current_pose(self):
+        return self._pose
+
+    def set_has_been_moved(self):
+        self._has_been_moved = True
+
+    def clear_has_been_moved(self):
+        self._has_been_moved = False
+
+    def get_has_been_moved(self):
+        return self._has_been_moved
+
+
+def generate_straight_line(start, stop, spacing=0.05):
+    # Generate the points for the straight line
+    num_lines = round(
+        math.sqrt(abs(stop[0] - start[0]) ** 2 + abs(stop[1] - start[1]) ** 2) / spacing
+    )
+
+    # Generate the x and y points
+    x_points = np.linspace(start[0], stop[0], num_lines)
+    y_points = np.linspace(start[1], stop[1], num_lines)
+    heading = math.atan2((stop[1] - start[1]), (stop[0] - start[0]))
+
+    # Adjust to be within the correct range
+    heading -= math.pi / 2
+
+    # Combine the points so that it is (x, y, heading)
+    points = np.column_stack((x_points, y_points, np.ones(num_lines) * heading))
+
+    return points
 
 
 if __name__ == "__main__":

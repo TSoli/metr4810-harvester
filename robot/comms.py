@@ -23,6 +23,7 @@ class Comms:
         self._ip = "0.0.0.0"
         self._port = port
         self._socket = None
+        self._wlan = None
 
     def connect(self) -> None:
         """
@@ -38,11 +39,9 @@ class Comms:
 
         ssid = data["ssid"]
         password = data["password"]
-        self._ip = data["ip"]
-        ip_info = wlan.ifconfig()
-        ip_config = (self._ip, ip_info[1], ip_info[2], ip_info[3])
-        wlan.ifconfig(ip_config)
-        logger.info("Connecting to wifi...")
+        # ip_info = wlan.ifconfig()
+        # ip_config = (self._ip, ip_info[1], ip_info[2], ip_info[3])
+        # wlan.ifconfig(ip_config)
         while True:
             try:
                 wlan.connect(ssid, password)
@@ -55,15 +54,24 @@ class Comms:
                 pass
 
         self._ip = wlan.ifconfig()[0]
-        logger.info(f"Connected to {self._ip}")
+        self._wlan = wlan
+        # logger.info(f"Connected to {self._ip}")
 
     def run(self) -> None:
         """Start accepting messages"""
         self._open_socket()
 
-        # TODO: Handle sending logs?
         while True:
-            data = self._socket.recv(1024).decode()
+            if not self._wlan.isconnected():
+                self.connect()
+            try:
+                data = self._socket.recv(1024).decode()
+            except Exception as e:
+                continue
+
+            if not data:
+                continue
+
             try:
                 command = json.loads(data)
             except Exception as e:
@@ -80,6 +88,7 @@ class Comms:
         addr = (self._ip, self._port)
         connection = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         connection.bind(addr)
+        connection.setblocking(False)
         self._socket = connection
 
     def _queue_command(self, command: dict) -> None:
