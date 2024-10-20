@@ -11,6 +11,7 @@ from localisation import (ROBOT_MARKERS, BufferlessVideoCapture, Localisation,
                           get_cam_params)
 from logger import logger
 from path_following import HeadingController, PurePursuitController
+from path_planner_arc import PathPlannerArc
 from path_planning_zigzag import PathPlannerZigZag
 from pynput import keyboard
 from utils.path_planning_visualiser import visualize_segments_zig_zag
@@ -108,22 +109,14 @@ def main(args=None):
     pf = PathFollower(ppc, hc, comms)
 
     # Construct the zigzag path class
-    zig_zag_planner = PathPlannerZigZag(
-        COVERABLE_AREA_WIDTH,
-        COVERABLE_AREA_HEIGHT,
-        WAYPOINT_SPACING,
-        START_X,
-        START_Y,
-        SCOOP_WIDTH,
-        OVERLAP_PERCENTAGE,
-    )
+    radial_planner = PathPlannerArc(0.3, 0.3, 0.18, 10, 1.4, WAYPOINT_SPACING)
 
     # Generate the zigzag path
-    zig_zag_path = zig_zag_planner.generate_zigzag_path()
-    visualize_segments_zig_zag(zig_zag_path)
+    rad_path = radial_planner.generate_all_radial_segments()
+    visualize_segments_zig_zag(rad_path)
 
     # Construct the main controller
-    mc = MainController(zig_zag_path, comms, pf)
+    mc = MainController(rad_path, comms, pf)
     # mc.set_mode(CONTINUE)
 
     # Flag for digging
@@ -207,9 +200,9 @@ def main(args=None):
                 time.sleep(0.05)
                 comms.send_drive_request(0.0, 0.0)
                 time.sleep(0.05)
-                comms.send_scoop_request(True)
-                time.sleep(3.0)
-                comms.send_scoop_request(False)
+                # comms.send_scoop_request(True)
+                # time.sleep(3.0)
+                # comms.send_scoop_request(False)
                 time.sleep(3.0)
 
                 prev_time = time.time()
@@ -259,19 +252,19 @@ class PathFollower:
     def get_control_action(self, current_pose):
         global digging_flag
 
-        if self._initial_turn:
-            digging_flag = False
-
-            action_turn = self._hc.get_control_action(current_pose[2], self._path[0][2])
-            if action_turn != 0:
-                return (0, action_turn)
-
-            digging_flag = True
-            time.sleep(0.05)
-            self._comms.send_scoop_request(False)
-
-            self._hc.reset()
-            self._initial_turn = False
+        # if self._initial_turn:
+        #     digging_flag = False
+        #
+        #     action_turn = self._hc.get_control_action(current_pose[2], self._path[0][2])
+        #     if action_turn != 0:
+        #         return (0, action_turn)
+        #
+        #     digging_flag = True
+        #     time.sleep(0.05)
+        #     self._comms.send_scoop_request(False)
+        #
+        #     self._hc.reset()
+        #     self._initial_turn = False
 
         action_straight = self._ppc.get_control_action(current_pose)
         if np.any(action_straight != 0):
@@ -319,7 +312,7 @@ class MainController:
 
                 # Lower Scoop
                 time.sleep(0.05)
-                self._comms.send_scoop_request(False)
+                # self._comms.send_scoop_request(False)
 
                 # Set the path for the controller
                 current_segment = self._overall_path[self._path_segment_idx - 1]
@@ -338,7 +331,7 @@ class MainController:
             self.set_stored_pose()
             self.set_has_been_moved()
             time.sleep(0.01)
-            self._comms.send_scoop_request(True)
+            # self._comms.send_scoop_request(True)
             digging_flag = False
 
             # Generate path to go to high ground, will be wrapped with desired location
@@ -349,7 +342,7 @@ class MainController:
             self.set_stored_pose()
             self.set_has_been_moved()
             time.sleep(0.05)
-            self._comms.send_scoop_request(True)
+            # self._comms.send_scoop_request(True)
             digging_flag = False
 
             path = generate_straight_line(
@@ -369,7 +362,7 @@ class MainController:
         if mode == RETURN_TO_POSITION:
             digging_flag = False
             time.sleep(0.05)
-            self._comms.send_scoop_request(True)
+            # self._comms.send_scoop_request(True)
 
             path = generate_straight_line(
                 self.get_current_pose(), self.get_stored_pose(), WAYPOINT_SPACING
