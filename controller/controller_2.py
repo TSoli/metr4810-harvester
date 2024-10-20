@@ -193,8 +193,8 @@ def main(args=None):
                     digging_flag = True
                     mc.set_mode(CONTINUE)
                 continue
-
-        if digging_flag == True:
+        
+        if digging_flag == True and 0 < mc._path_follower._ppc.get_path_angle() < (-math.pi/2):
             # Send the scoop request
             if (time.time() - prev_time) > 3.0:
                 time.sleep(0.05)
@@ -300,7 +300,8 @@ class MainController:
 
                 self._comms.send_container_request(False)
                 time.sleep(1.0)
-                mode = RETURN_TO_POSITION
+                # mode = RETURN_TO_POSITION
+                mode = CONTINUE
                 self._has_been_moved = False
             else:
                 # Logic for segmenting selection in normal occurance
@@ -310,14 +311,14 @@ class MainController:
                 else:
                     self._path_segment_idx += 1
 
-                # Lower Scoop
-                time.sleep(0.05)
-                # self._comms.send_scoop_request(False)
+            # Lower Scoop
+            time.sleep(0.05)
+            # self._comms.send_scoop_request(False)
 
-                # Set the path for the controller
-                current_segment = self._overall_path[self._path_segment_idx - 1]
-                logger.info(f"Current segment: {current_segment}")
-                self._path_follower.set_path(current_segment)
+            # Set the path for the controller
+            current_segment = self._overall_path[self._path_segment_idx - 1]
+            logger.info(f"Current segment: {current_segment}")
+            self._path_follower.set_path(current_segment)
 
         elif mode == DISPENSE_BEANS:
             # Dispense beans, which is essentially just stopping the robot and going to waiting

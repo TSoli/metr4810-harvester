@@ -42,6 +42,10 @@ def visualize_segments(segment_list):
     plt.ylabel('Y Coordinates')
     plt.title('Path Planning with Individual Points')
     
+    # Add angle of each segment to legend
+    handles = [plt.Line2D([0], [0], color=colors(i), label=f'Segment {i+1} (angle: {math.degrees(segment_list[i][0, 2])})') for i in range(len(segment_list))]
+    plt.legend(handles=handles)
+
     # Show the plot
     plt.show()
 

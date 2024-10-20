@@ -129,6 +129,10 @@ class PurePursuitController:
 
         omega = velocity * curvature
         return np.array([velocity, omega])
+    
+    def get_path_angle(self):
+        return self._path[0][2]
+
 
 
 class HeadingController:
