@@ -43,7 +43,7 @@ class PathPlannerArc:
         current_y = self.start_y
         
         while radius <= self.radius:
-            w = angle_rad + math.radians(270)  # Adjusting w by radians(270)
+            w = angle_rad + math.radians(-90)  # Adjusting w by radians(270)
             points.append([current_x, current_y, w])
             
             # Move to the next point
@@ -63,7 +63,7 @@ class PathPlannerArc:
         current_y = self.start_y + radius * math.sin(angle_rad)
 
         while radius >= 0:
-            w = angle_rad + math.radians(270)  # Adjusting w by radians(270)
+            w = angle_rad + math.radians(90)  # Adjusting w by radians(270)
             points.append([current_x, current_y, w])
 
             # Move to the next point inward
@@ -94,3 +94,5 @@ if __name__ == "__main__":
     pathPlanner = PathPlannerArc(0.3, 0.3, 0.18, 10, 1.4, 0.05)
     segments = pathPlanner.generate_all_radial_segments()
     visualize_segments(segments)
+    # Include the angle in the legend
+

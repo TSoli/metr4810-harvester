@@ -21,11 +21,11 @@ WHEEL_RADIUS = 0.0396  # radius of wheel in m
 RPM_TO_RAD_S = 2 * math.pi / 60
 
 # CONSTANTS FOR THE PATH
-COVERABLE_AREA_WIDTH = 1.000
-COVERABLE_AREA_HEIGHT = 1.000
+COVERABLE_AREA_WIDTH = 1.400
+COVERABLE_AREA_HEIGHT = 1.400
 WAYPOINT_SPACING = 0.05
-START_X = 0.500
-START_Y = 0.500
+START_X = 0.300
+START_Y = 0.300
 SCOOP_WIDTH = 0.180
 OVERLAP_PERCENTAGE = 20
 
@@ -125,6 +125,7 @@ def main(args=None):
 
     # TODO REMOVE
     temp_flag = False
+    comms.send_container_request(False)
 
     while True:
         # Localise the robot
@@ -194,15 +195,17 @@ def main(args=None):
                     mc.set_mode(CONTINUE)
                 continue
 
-        if digging_flag == True:
+        if digging_flag == True and (
+            -math.pi / 2
+        ) < mc._path_follower._ppc.get_path_angle() < (0):
             # Send the scoop request
             if (time.time() - prev_time) > 3.0:
                 time.sleep(0.05)
                 comms.send_drive_request(0.0, 0.0)
                 time.sleep(0.05)
-                # comms.send_scoop_request(True)
-                # time.sleep(3.0)
-                # comms.send_scoop_request(False)
+                comms.send_scoop_request(True)
+                time.sleep(3.0)
+                comms.send_scoop_request(False)
                 time.sleep(3.0)
 
                 prev_time = time.time()
@@ -284,7 +287,7 @@ class MainController:
         self._path_segment_idx = 0
         self._pose = (0.0, 0.0)
         self._stored_pose = (0.0, 0.0)
-        self._container_position = (0.5, 0.5)
+        self._container_position = (0.1, 0.1)
         self._has_been_moved = False
 
     def set_mode(self, mode):
@@ -300,7 +303,8 @@ class MainController:
 
                 self._comms.send_container_request(False)
                 time.sleep(1.0)
-                mode = RETURN_TO_POSITION
+                # mode = RETURN_TO_POSITION
+                mode = CONTINUE
                 self._has_been_moved = False
             else:
                 # Logic for segmenting selection in normal occurance
@@ -310,14 +314,23 @@ class MainController:
                 else:
                     self._path_segment_idx += 1
 
-                # Lower Scoop
-                time.sleep(0.05)
-                # self._comms.send_scoop_request(False)
+            # Lower Scoop
+            time.sleep(0.05)
+            self._comms.send_scoop_request(False)
 
-                # Set the path for the controller
-                current_segment = self._overall_path[self._path_segment_idx - 1]
-                logger.info(f"Current segment: {current_segment}")
-                self._path_follower.set_path(current_segment)
+            # Set the path for the controller
+            current_segment = self._overall_path[self._path_segment_idx - 1]
+            if (-math.pi / 2) < current_segment[0][2] < (0):
+                digging_flag = True
+                time.sleep(0.05)
+                self._comms.send_scoop_request(False)
+            else:
+                digging_flag = False
+                time.sleep(0.05)
+                self._comms.send_scoop_request(True)
+
+            logger.info(f"Current segment: {current_segment}")
+            self._path_follower.set_path(current_segment)
 
         elif mode == DISPENSE_BEANS:
             # Dispense beans, which is essentially just stopping the robot and going to waiting
@@ -331,7 +344,7 @@ class MainController:
             self.set_stored_pose()
             self.set_has_been_moved()
             time.sleep(0.01)
-            # self._comms.send_scoop_request(True)
+            self._comms.send_scoop_request(True)
             digging_flag = False
 
             # Generate path to go to high ground, will be wrapped with desired location
@@ -342,7 +355,7 @@ class MainController:
             self.set_stored_pose()
             self.set_has_been_moved()
             time.sleep(0.05)
-            # self._comms.send_scoop_request(True)
+            self._comms.send_scoop_request(True)
             digging_flag = False
 
             path = generate_straight_line(
@@ -355,14 +368,14 @@ class MainController:
                 self.get_current_pose(), (0.1, 0.1), WAYPOINT_SPACING
             )
             digging_flag = False
-            self._path_follower._ppc.avg_speed *= 0.5
+            # self._path_follower._ppc.avg_speed *= 0.5
             self._path_follower.set_path(path)
             pass
 
         if mode == RETURN_TO_POSITION:
             digging_flag = False
             time.sleep(0.05)
-            # self._comms.send_scoop_request(True)
+            self._comms.send_scoop_request(True)
 
             path = generate_straight_line(
                 self.get_current_pose(), self.get_stored_pose(), WAYPOINT_SPACING
